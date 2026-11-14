@@ -12,7 +12,8 @@
     # (excludeSystems) is merged.
     logos-module-builder.url = "github:logos-co/logos-module-builder/feat/systems-opt-out";
     nix-bundle-lgx.url = "github:logos-co/nix-bundle-lgx";
-    blockchain_module.url = "github:logos-blockchain/logos-blockchain-module?ref=0.3.4";
+    # Windows-enabled build of blockchain_module 0.3.4 (yayguru fork, see its WINDOWS.md).
+    blockchain_module.url = "github:yayguru/logos-blockchain-module/windows-x86_64";
     # TODO(logos-co/logos-liblogos#219): here only to sample the node module's
     # CPU and memory. liblogos measures both already but exposes them to hosts
     # alone, so this app resolves the PID through modules_state and samples it
@@ -26,9 +27,6 @@
       src = ./.;
       configFile = ./metadata.json;
       flakeInputs = inputs;
-
-      # This module does not cross-build to Windows.
-      excludeSystems = [ "x86_64-windows" ];
 
       externalLibInputs = {
         process_stats = inputs.process-stats;
