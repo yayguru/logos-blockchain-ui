@@ -893,6 +893,47 @@ Rectangle {
                         )
                     }
 
+                    onGasPricesRequested: function(target) {
+                        if (!root.backend) return
+                        logos.watch(root.backend.getGasPrices(),
+                            function(result) {
+                                if (result.success) walletView.setGasPrices(target, true, result.value)
+                                else walletView.setGasPrices(target, false, _d.errorText(result.error))
+                            },
+                            function(error) { walletView.setGasPrices(target, false, _d.errorText(error)) })
+                    }
+                    onLezNotesRequested: function(addressHex) {
+                        if (!root.backend) return
+                        logos.watch(root.backend.getNotes(addressHex, ""),
+                            function(result) {
+                                if (result.success) walletView.setLezNotes(true, result.value)
+                                else walletView.setLezNotes(false, _d.errorText(result.error))
+                            },
+                            function(error) { walletView.setLezNotes(false, _d.errorText(error)) })
+                    }
+                    onLezSplitRequested: function(fromKeyHex, amountTokens) {
+                        if (!root.backend) return
+                        // A transfer to the same account: its output is the exact note.
+                        logos.watch(root.backend.transferFunds(fromKeyHex, fromKeyHex, amountTokens),
+                            function(result) {
+                                if (result.success) walletView.setLezSplitResult(true, result.value)
+                                else walletView.setLezSplitResult(false, _d.errorText(result.error))
+                            },
+                            function(error) { walletView.setLezSplitResult(false, _d.errorText(error)) })
+                    }
+                    onLezDepositRequested: function(channelIdHex, inputNoteIdHexes, metadataBase58, changePublicKeyHex, fundingPublicKeyHexes, maxTxFeeTokens) {
+                        if (!root.backend) return
+                        logos.watch(
+                            root.backend.channelDepositWithNotes(
+                                channelIdHex, inputNoteIdHexes, metadataBase58,
+                                changePublicKeyHex, fundingPublicKeyHexes, maxTxFeeTokens, ""),
+                            function(result) {
+                                if (result.success) walletView.setLezDepositResult(true, result.value)
+                                else walletView.setLezDepositResult(false, _d.errorText(result.error))
+                            },
+                            function(error) { walletView.setLezDepositResult(false, _d.errorText(error)) })
+                    }
+
                     onGetNotesRequested: function(addressHex, optionalTipHex) {
                         if (!root.backend) return
                         logos.watch(

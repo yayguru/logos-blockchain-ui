@@ -6,7 +6,7 @@ import Logos.Controls
 
 import "../controls"
 
-// Wallet section: Accounts, Transfer, Channel Deposit, Inscribe, Withdraw, SDP.
+// Wallet section: Accounts, Transfer, LEZ Bridge, Channel Deposit, Inscribe, Withdraw, SDP.
 RowLayout {
     id: root
 
@@ -27,6 +27,13 @@ RowLayout {
     // ---- Requests out (the host orchestrates these) ----
     signal refreshAccountsRequested()
     signal transferRequested(string fromKeyHex, string toKeyHex, string amount)
+    // Gas prices for a fee preview; answered with setGasPrices(target, ...).
+    signal gasPricesRequested(string target)
+    signal lezNotesRequested(string addressHex)
+    signal lezSplitRequested(string fromKeyHex, string amountTokens)
+    signal lezDepositRequested(string channelIdHex, var inputNoteIdHexes,
+                               string metadataBase58, string changePublicKeyHex,
+                               var fundingPublicKeyHexes, string maxTxFeeTokens)
     signal getNotesRequested(string addressHex, string optionalTipHex)
     signal submitRequested(string channelIdHex, var inputNoteIdHexes,
                            string metadataBase58, string changePublicKeyHex,
@@ -46,6 +53,13 @@ RowLayout {
     // ---- Results back in ----
     function setTransferHash(hash) { transferView.setTransferHash(hash) }
     function setTransferError(message) { transferView.setTransferError(message) }
+    function setGasPrices(target, success, value) {
+        if (target === "lez") lezBridgeView.setGasPrices(success, value)
+        else transferView.setGasPrices(success, value)
+    }
+    function setLezNotes(success, value) { lezBridgeView.setNotes(success, value) }
+    function setLezSplitResult(success, value) { lezBridgeView.setSplitResult(success, value) }
+    function setLezDepositResult(success, value) { lezBridgeView.setDepositResult(success, value) }
     function setNotes(value) { channelDepositView.setNotes(value) }
     function setNotesError(message) { channelDepositView.setNotesError(message) }
     function setSubmitResult(success, value) {
@@ -73,6 +87,7 @@ RowLayout {
             // rather than being unreachable, same as the tabs above.
             { label: qsTr("Accounts"), icon: "" },
             { label: qsTr("Transfer"), icon: "" },
+            { label: qsTr("LEZ Bridge"), icon: "" },
             { label: qsTr("Channel Deposit"), icon: "" },
             { label: qsTr("Inscribe"), icon: "" },
             { label: qsTr("Channel Withdraw"), icon: "" },
@@ -111,6 +126,25 @@ RowLayout {
                 accountRows: root.accountRows
                 onTransferRequested: (fromKeyHex, toKeyHex, amount) =>
                     root.transferRequested(fromKeyHex, toKeyHex, amount)
+                onGasPricesRequested: root.gasPricesRequested("transfer")
+                onCopyToClipboard: (text) => root.copyToClipboard(text)
+            }
+
+            LezBridgeView {
+                id: lezBridgeView
+                nodeOffSeverity: root.nodeOffSeverity
+                nodeOffReason: root.nodeOffReason
+                accountRows: root.accountRows
+                nodeRunning: root.nodeRunning
+                lezChannelId: root.lezChannelId
+                onNotesRequested: (addressHex) => root.lezNotesRequested(addressHex)
+                onGasPricesRequested: root.gasPricesRequested("lez")
+                onSplitRequested: (fromKeyHex, amountTokens) =>
+                    root.lezSplitRequested(fromKeyHex, amountTokens)
+                onDepositRequested: (channelIdHex, inputNoteIdHexes, metadataBase58,
+                                     changePublicKeyHex, fundingPublicKeyHexes, maxTxFeeTokens) =>
+                    root.lezDepositRequested(channelIdHex, inputNoteIdHexes, metadataBase58,
+                                             changePublicKeyHex, fundingPublicKeyHexes, maxTxFeeTokens)
                 onCopyToClipboard: (text) => root.copyToClipboard(text)
             }
 

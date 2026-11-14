@@ -67,6 +67,10 @@ ColumnLayout {
             } catch (e) {
                 d.txHash = text
             }
+            // A sent preview is spent: Confirm must not send the same
+            // inscription again. A new Estimate re-arms it.
+            d.estimatedFee = ""
+            confirmBox.checked = false
         }
     }
 

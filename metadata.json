@@ -10,7 +10,7 @@
   "view": "qml/BlockchainView.qml",
   "dependencies": ["blockchain_module"],
   "bootstrap_peers": [],
-  "lez_channel_id": "",
+  "lez_channel_id": "0101010101010101010101010101010101010101010101010101010101010101",
   "nix": {
     "packages": {
       "build": [],
