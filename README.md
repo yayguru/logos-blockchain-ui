@@ -4,6 +4,8 @@ A QML + C++ backend UI module for the [Logos](https://logos.co) platform that pr
 
 Built with [`logos-module-builder`](https://github.com/logos-co/logos-module-builder) using the `mkLogosQmlModule` pattern (QML frontend + C++ backend with Qt Remote Objects).
 
+**Windows users:** see [WINDOWS.md](WINDOWS.md) for a from-scratch Basecamp install guide (unofficial yayguru builds).
+
 ## Features
 
 - Start/Stop blockchain node
