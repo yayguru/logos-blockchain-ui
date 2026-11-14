@@ -75,10 +75,10 @@ ColumnLayout {
     }
 
     RowLayout {
-        LogosButton { text: qsTr("Status"); checked: d.tab === 0; checkable: true; onClicked: d.tab = 0 }
-        LogosButton { text: qsTr("Declaration"); checked: d.tab === 1; checkable: true; onClicked: d.tab = 1 }
-        LogosButton { text: qsTr("Activity"); checked: d.tab === 2; checkable: true; onClicked: d.tab = 2 }
-        LogosButton { text: qsTr("Withdrawal"); checked: d.tab === 3; checkable: true; onClicked: d.tab = 3 }
+        LogosButton { text: qsTr("Status"); variant: d.tab === 0 ? LogosButton.Variant.Primary : LogosButton.Variant.Secondary; onClicked: d.tab = 0 }
+        LogosButton { text: qsTr("Declaration"); variant: d.tab === 1 ? LogosButton.Variant.Primary : LogosButton.Variant.Secondary; onClicked: d.tab = 1 }
+        LogosButton { text: qsTr("Activity"); variant: d.tab === 2 ? LogosButton.Variant.Primary : LogosButton.Variant.Secondary; onClicked: d.tab = 2 }
+        LogosButton { text: qsTr("Withdrawal"); variant: d.tab === 3 ? LogosButton.Variant.Primary : LogosButton.Variant.Secondary; onClicked: d.tab = 3 }
     }
 
     // Status

@@ -200,14 +200,12 @@ ColumnLayout {
     RowLayout {
         LogosButton {
             text: qsTr("Text")
-            checked: d.mode === 0
-            checkable: true
+            variant: d.mode === 0 ? LogosButton.Variant.Primary : LogosButton.Variant.Secondary
             onClicked: d.mode = 0
         }
         LogosButton {
             text: qsTr("File")
-            checked: d.mode === 1
-            checkable: true
+            variant: d.mode === 1 ? LogosButton.Variant.Primary : LogosButton.Variant.Secondary
             onClicked: d.mode = 1
         }
     }
@@ -327,3 +325,4 @@ ColumnLayout {
         Layout.fillWidth: true
     }
 
+}
