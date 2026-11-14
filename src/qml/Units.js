@@ -12,7 +12,7 @@
 //
 //     format("1500000000")    → "1.5 " + SYMBOL  (grouped for the current locale)
 //     canonical("1500000000") → "1.5"       (ungrouped, '.', for copy buttons)
-//     normalizeInput("1.234,5") → "1234.5"  (locale text → canonical tokens)
+//     normalizeInput("0,5") → "0.5", normalizeInput("0.5") → "0.5" (either separator)
 
 // The scale is the app's assertion, not the node's: the node publishes no
 // denomination. If this is ever wrong, every figure in the app is wrong by it.
@@ -269,40 +269,52 @@ function compareLepta(a, b) {
     return x < y ? -1 : (x > y ? 1 : 0)
 }
 
-// Strips grouping and normalises the decimal point to '.', so "1.234,5" (de)
-// and "1,234.5" (en) both become "1234.5". Locale knowledge stops here;
-// everything downstream sees canonical text.
+// Amount text -> { canonical, lepta, error }.
 //
-// ONLY this locale's decimal point counts as one. Accepting '.' as well would
-// make "1.5" mean 1.5 to a de user and 15 to this function — a silent tenfold
-// error on a transfer. inputRegExp() refuses the other separator for the same
-// reason, so it cannot be typed in the first place.
-function normalizeInput(text, locale) {
-    const loc = locale || Qt.locale()
-    let out = ""
-    for (let i = 0; i < text.length; i++) {
-        const ch = text.charAt(i)
-        if (ch >= "0" && ch <= "9")
-            out += ch
-        else if (ch === loc.decimalPoint)
-            out += "."
-        // Anything else — group separators, spaces, the symbol — is dropped.
-    }
-    return out
+// Accepts '.' AND ',' as the decimal separator whatever the system locale is,
+// so "0.5" and "0,5" both mean half a token on every machine. Spaces (incl.
+// no-break/thin spaces) are dropped as digit grouping. Anything else is a
+// refusal with a reason, never a silent drop: dropping a separator turned
+// "0.001" into 1 token on a ru locale (windows.6). Because both '.' and ',' are
+// decimal points here, a figure with two of them ("1.234,5", "1,234.5",
+// "1.2.3") is ambiguous and refused rather than guessed at.
+//
+// `canonical` is "1.5"-style text (what the backend parses), `lepta` the exact
+// base-units string; both "" when error is set or the text is empty.
+var MAX_LEPTA = "18446744073709551615"
+function parseAmount(text) {
+    const raw = String(text === undefined || text === null ? "" : text)
+    const t = raw.replace(/[\s\u00a0\u2007\u2009\u202f]/g, "")
+    if (t.length === 0)
+        return { canonical: "", lepta: "", error: "" }
+    if (!/^[0-9.,]+$/.test(t))
+        return { canonical: "", lepta: "", error: "Use only digits and one decimal separator ('.' or ',')." }
+    const seps = t.replace(/[0-9]/g, "")
+    if (seps.length > 1)
+        return { canonical: "", lepta: "", error: "Use one decimal separator ('.' or ',') and no thousands separators." }
+    const canon = t.replace(",", ".")
+    if (canon === ".")
+        return { canonical: "", lepta: "", error: "Enter an amount, for example 0.5 or 0,5." }
+    const dot = canon.indexOf(".")
+    if (dot >= 0 && canon.length - dot - 1 > DECIMALS)
+        return { canonical: "", lepta: "", error: "At most " + DECIMALS + " decimal places (1 base unit = 0.000000001)." }
+    const lepta = toLepta(canon)
+    if (lepta.length === 0)
+        return { canonical: "", lepta: "", error: "Enter an amount, for example 0.5 or 0,5." }
+    if (compareLepta(lepta, MAX_LEPTA) > 0)
+        return { canonical: "", lepta: "", error: "Amount is too large." }
+    return { canonical: canonical(lepta), lepta: lepta, error: "" }
 }
 
-// What an amount field accepts while typing: digits and at most one decimal
-// separator followed by at most DECIMALS digits, since the token has no finer
-// unit than a lepta. Partial input ("", "1.") passes — the field must not
-// fight the user mid-word.
-//
-// Turning that text into lepta is NOT done here. The backend owns it: the u64
-// bound and the error messages belong with the code that owns correctness, and
-// one implementation beats two that can drift.
-function inputRegExp(locale) {
-    const loc = locale || Qt.locale()
-    // Escaped for the character class: '.' is literal there, but a locale
-    // separator could be anything.
-    const sep = loc.decimalPoint.replace(/[\\\]^-]/g, "\\$&")
-    return new RegExp("^[0-9]*(?:[" + sep + "][0-9]{0," + DECIMALS + "})?$")
+// Canonical token text for an amount field, or "" when it is empty or invalid
+// (see parseAmount for the reason). Never drops characters to make text fit.
+function normalizeInput(text) {
+    return parseAmount(text).canonical
+}
+
+// Kept for callers that still bind a validator: accepts what parseAmount can
+// judge (digits, '.', ',', spaces) so invalid figures reach the visible error
+// instead of being swallowed keystroke by keystroke.
+function inputRegExp() {
+    return /^[0-9.,\s\u00a0\u2007\u2009\u202f]{0,40}$/
 }

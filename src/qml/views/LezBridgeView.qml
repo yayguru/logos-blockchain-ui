@@ -170,7 +170,10 @@ ColumnLayout {
                 return qsTr(e)
             if (!/^(0x)?[0-9a-fA-F]{64}$/.test(channel()))
                 return qsTr("The LEZ channel id must be 64 hex characters.")
-            var lepta = Units.toLepta(Units.normalizeInput(amountField.text))
+            var pa = Units.parseAmount(amountField.text)
+            if (pa.error.length)
+                return qsTr(pa.error)
+            var lepta = pa.lepta
             if (!lepta.length || lepta === "0")
                 return qsTr("Enter an amount.")
             if (Units.compareLepta(lepta, fromBalance()) > 0)
@@ -189,8 +192,9 @@ ColumnLayout {
             recipient = recipientField.text.trim()
             recipientHex = WalletTools.lezAccountHex(recipient)
             channelId = channel().replace(/^0x/i, "").toLowerCase()
-            amountTokens = Units.normalizeInput(amountField.text)
-            amountLepta = Units.toLepta(amountTokens)
+            var pa = Units.parseAmount(amountField.text)
+            amountTokens = pa.canonical
+            amountLepta = pa.lepta
             exactNoteId = ""
             splitTx = ""
             depositTx = ""
@@ -334,12 +338,20 @@ ColumnLayout {
                 id: amountField
                 objectName: "lezAmountField"
                 Layout.fillWidth: true
-                placeholderText: qsTr("0.001")
+                placeholderText: qsTr("0.001 or 0,001")
                 enabled: d.phase === 0 || d.phase === 4
                 Accessible.name: qsTr("Amount")
-                validator: RegularExpressionValidator {
-                    regularExpression: Units.inputRegExp(Qt.locale())
-                }
+            }
+            LogosText {
+                objectName: "lezAmountHint"
+                readonly property var pa: Units.parseAmount(amountField.text)
+                Layout.fillWidth: true
+                visible: amountField.text.trim().length > 0
+                text: pa.error.length ? qsTr(pa.error) : qsTr("= %1 base units").arg(pa.lepta)
+                Accessible.name: text
+                font.pixelSize: Theme.typography.secondaryText
+                color: pa.error.length ? Theme.palette.error : Theme.palette.textSecondary
+                wrapMode: Text.WordWrap
             }
 
             FieldLabel {

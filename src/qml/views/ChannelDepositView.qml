@@ -173,7 +173,7 @@ ColumnLayout {
                 return channelIdField.textInput.acceptableInput
                     && d.changeKey.trim().length > 0
                     && fundingKeyList().length > 0
-                    && maxFeeField.text.trim().length > 0
+                    && Units.parseAmount(maxFeeField.text).lepta.length > 0
                     && metadataIsValid()
                     && tipIsValid()
             default:
@@ -215,7 +215,7 @@ ColumnLayout {
                 metadataField.text.trim(),
                 d.changeKey.trim(),
                 fundingKeyList(),
-                Units.normalizeInput(maxFeeField.text.trim()),
+                Units.parseAmount(maxFeeField.text).canonical,
                 tipField.text.trim())
         }
 
@@ -246,8 +246,8 @@ ColumnLayout {
                 { k: qsTr("Total amount"), v: Units.format(noteSelector.selectedTotal) },
                 { k: qsTr("Change public key"), v: d.changeKey.trim() },
                 { k: qsTr("Funding public keys"), v: fundingKeyList().join("\n") },
-                { k: qsTr("Max tx fee"), v: maxFeeField.text.trim().length > 0
-                                            ? maxFeeField.text.trim() + " " + Units.SYMBOL : "" },
+                { k: qsTr("Max tx fee"), v: Units.parseAmount(maxFeeField.text).lepta.length > 0
+                                            ? qsTr("%1 (%2 base units)").arg(Units.format(Units.parseAmount(maxFeeField.text).lepta)).arg(Units.parseAmount(maxFeeField.text).lepta) : "" },
                 { k: qsTr("Metadata (base58)"), v: metadataField.text.trim() || qsTr("(none)") },
                 { k: qsTr("Optional tip hex"), v: tipField.text.trim() || qsTr("(current tip)") }
             ]
@@ -518,10 +518,17 @@ ColumnLayout {
                 LogosTextField {
                     id: maxFeeField
                     Layout.fillWidth: true
-                    placeholderText: qsTr("Maximum transaction fee (%1)").arg(Units.SYMBOL)
-                    validator: RegularExpressionValidator {
-                        regularExpression: Units.inputRegExp(Qt.locale())
-                    }
+                    placeholderText: qsTr("Maximum transaction fee (%1), e.g. 0.00001 or 0,00001").arg(Units.SYMBOL)
+                }
+                LogosText {
+                    readonly property var pa: Units.parseAmount(maxFeeField.text)
+                    Layout.fillWidth: true
+                    visible: maxFeeField.text.trim().length > 0
+                    text: pa.error.length ? qsTr(pa.error) : qsTr("= %1 base units").arg(pa.lepta)
+                    Accessible.name: text
+                    font.pixelSize: Theme.typography.secondaryText
+                    color: pa.error.length ? Theme.palette.error : Theme.palette.textSecondary
+                    wrapMode: Text.WordWrap
                 }
 
                 LogosText {

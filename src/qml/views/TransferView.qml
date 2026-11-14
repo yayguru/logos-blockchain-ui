@@ -36,8 +36,11 @@ ColumnLayout {
             ? accountRows[transferFromCombo.currentIndex] : null
     readonly property string fromBalance: fromRow ? (fromRow.balance || "") : ""
 
-    readonly property string amountLepta:
-        Units.toLepta(Units.normalizeInput(transferAmountField.text))
+    // parseAmount takes '.' or ',' on any locale and refuses (with a reason)
+    // anything it cannot read exactly.
+    readonly property var amountParse: Units.parseAmount(transferAmountField.text)
+    readonly property string amountLepta: amountParse.lepta
+    readonly property string amountError: amountParse.error
     // NaN when either side is not a figure — an unfetched balance cannot say
     // anything about affordability, so it must not read as "insufficient".
     readonly property bool overBalance:
@@ -207,10 +210,28 @@ ColumnLayout {
             Layout.fillWidth: true
             enabled: !d.reviewing
             Accessible.name: qsTr("Amount")
-            placeholderText: qsTr("0.00")
-            validator: RegularExpressionValidator {
-                regularExpression: Units.inputRegExp(Qt.locale())
-            }
+            placeholderText: qsTr("0.001 or 0,001")
+        }
+
+        LogosText {
+            objectName: "transferAmountError"
+            Layout.fillWidth: true
+            visible: root.amountError.length > 0
+            text: qsTr(root.amountError)
+            Accessible.name: text
+            font.pixelSize: Theme.typography.secondaryText
+            color: Theme.palette.error
+            wrapMode: Text.WordWrap
+        }
+
+        LogosText {
+            objectName: "transferAmountBase"
+            Layout.fillWidth: true
+            visible: root.amountError.length === 0 && root.amountLepta.length > 0
+            text: qsTr("= %1 base units").arg(root.amountLepta)
+            Accessible.name: text
+            font.pixelSize: Theme.typography.secondaryText
+            color: Theme.palette.textSecondary
         }
 
         LogosText {
@@ -242,7 +263,7 @@ ColumnLayout {
                     d.fromKey = String(transferFromCombo.currentValue || "").trim()
                     d.fromLabel = transferFromCombo.currentText
                     d.toKey = WalletTools.normalizeWalletKey(transferToField.text)
-                    d.amount = Units.normalizeInput(transferAmountField.text)
+                    d.amount = root.amountParse.canonical
                     d.amountLepta = root.amountLepta
                     root.resultHash = ""
                     root.resultError = ""
@@ -296,10 +317,9 @@ ColumnLayout {
                     Layout.fillWidth: true
                     text: d.pricesPending
                           ? qsTr("Estimating fee…")
-                          : qsTr("Estimated fee: about %1 base units (%2 %3), paid from the same account%4. The wallet sets the exact fee when it builds the transaction.")
+                          : qsTr("Estimated fee: about %1 base units (%2), paid from the same account%3. The wallet sets the exact fee when it builds the transaction.")
                                 .arg(d.feeLepta)
-                                .arg(WalletTools.leptaSmallToTokens(d.feeLepta))
-                                .arg(Units.SYMBOL)
+                                .arg(Units.format(String(d.feeLepta)))
                                 .arg(d.pricesLive ? qsTr(" at gas prices %1/%2").arg(d.ep).arg(d.sp)
                                                   : qsTr(" (gas prices unavailable, default 1/7 used)"))
                     wrapMode: Text.WordWrap
