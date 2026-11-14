@@ -13,6 +13,10 @@ ColumnLayout {
     Layout.fillHeight: true
 
     property var accountRows: []
+    onAccountRowsChanged: {
+        if (accountRows && accountRows.length > 0 && fundingCombo.currentIndex < 0)
+            fundingCombo.currentIndex = 0
+    }
     property bool nodeRunning: false
     property string nodeOffReason: ""
     property int nodeOffSeverity: LogosNotice.Info
@@ -66,9 +70,13 @@ ColumnLayout {
         property string txHash: ""
 
         function fundingKey() {
-            if (fundingCombo.currentIndex < 0 || fundingCombo.currentIndex >= root.accountRows.length)
-                return ""
-            return String(root.accountRows[fundingCombo.currentIndex].address || "")
+            var v = fundingCombo.currentValue
+            if (v && String(v).length)
+                return String(v)
+            var i = fundingCombo.currentIndex
+            if (i >= 0 && i < root.accountRows.length)
+                return String(root.accountRows[i].address || "")
+            return ""
         }
         function defaultKeyPath() {
             if (keyPathField.text.trim().length)
@@ -151,17 +159,16 @@ ColumnLayout {
             }
 
             LogosText { text: qsTr("Fee paid from"); color: Theme.palette.text }
-            LogosComboBox {
+                        LogosComboBox {
                 id: fundingCombo
                 Layout.fillWidth: true
                 implicitHeight: 40
-                model: {
-                    var labels = []
-                    for (var i = 0; i < root.accountRows.length; ++i) {
-                        var r = root.accountRows[i]
-                        labels.push((r.name || r.title || "") + " " + String(r.address || "").slice(0, 12) + "…")
-                    }
-                    return labels
+                model: root.accountRows
+                textRole: "label"
+                valueRole: "address"
+                onModelChanged: {
+                    if (count > 0 && currentIndex < 0)
+                        currentIndex = 0
                 }
             }
 
@@ -210,7 +217,7 @@ ColumnLayout {
             LogosText {
                 visible: d.previewText.length > 0 && d.txHash.length === 0
                 text: d.previewText
-                color: d.previewOk ? Theme.palette.textSecondary : Theme.palette.danger
+                color: d.previewOk ? Theme.palette.textSecondary : Theme.palette.error
                 wrapMode: Text.WrapAnywhere
                 Layout.fillWidth: true
             }

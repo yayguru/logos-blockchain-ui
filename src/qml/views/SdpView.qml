@@ -204,7 +204,7 @@ ColumnLayout {
             LogosText {
                 visible: d.previewText.length > 0 && d.tab !== 0
                 text: d.previewText
-                color: d.previewOk ? Theme.palette.textSecondary : Theme.palette.danger
+                color: d.previewOk ? Theme.palette.textSecondary : Theme.palette.error
                 wrapMode: Text.WrapAnywhere
                 Layout.fillWidth: true
             }
