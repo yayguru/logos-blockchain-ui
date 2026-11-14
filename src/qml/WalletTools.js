@@ -129,3 +129,40 @@ function findExactNote(notes, amountLepta, excludeIds) {
     }
     return null
 }
+
+// Plain-language wording for raw module/node errors. Returns the friendly
+// sentence followed by the original text as "Details", so nothing the node said
+// is hidden. Unknown errors pass through unchanged.
+function _leptaToTokensPlain(lepta) {
+    var s = String(lepta).replace(/^0+/, "")
+    if (s.length === 0) s = "0"
+    while (s.length < 10) s = "0" + s
+    var whole = s.slice(0, s.length - 9).replace(/^0+(?=\d)/, "")
+    var frac = s.slice(s.length - 9).replace(/0+$/, "")
+    return frac.length ? whole + "." + frac : whole
+}
+
+function humanError(message, formatLepta) {
+    var m = String(message === undefined || message === null ? "" : message).trim()
+    if (m.length === 0)
+        return ""
+    var lower = m.toLowerCase()
+    var nice = ""
+    var avail = /available\s*[=:]\s*(\d+)/i.exec(m)
+    if (/not enough funds|insufficient (funds|balance)|not have enough/.test(lower)) {
+        nice = "Not enough funds in this account for the amount plus the fee"
+        if (avail) nice += " (available " + (formatLepta ? formatLepta(avail[1]) : _leptaToTokensPlain(avail[1]) + " TestToken") + " = " + avail[1] + " base units)"
+        nice += ". Lower the amount or pick another account."
+    } else if (/not reachable|connection refused|connection to the node module failed|not running|node is offline|module not initialized|timed? ?out|call failed/.test(lower)) {
+        nice = "The node is not reachable right now. Start the node (Start Node) and wait until it shows Online, then try again."
+    } else if (/(invalid|malformed|bad).{0,40}(key|address|public key|recipient|hex|account)|(key|address).{0,30}(invalid|not valid|out of (range|field))/.test(lower)) {
+        nice = "That address is not valid. A wallet address is 64 hex characters; a LEZ account is a base58 string."
+    } else if (/(fee|max_tx_fee|max fee).{0,60}(exceed|too (high|low)|above|insufficient|greater)|(exceed|above).{0,40}(fee|cap)/.test(lower)) {
+        nice = "The fee would be higher than the maximum you allowed. Raise the max fee a little or try again later."
+    } else if (/note.{0,40}(not found|unknown|spent|already)/.test(lower)) {
+        nice = "That note is no longer available (already spent or not yet confirmed). Refresh and try again in a minute."
+    }
+    if (!nice.length)
+        return m
+    return nice + " Details: " + m
+}

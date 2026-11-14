@@ -46,6 +46,45 @@ ColumnLayout {
 
     signal startNewNodeRequested()
 
+    // Auto-resume after a Basecamp/UI restart or update (yayguru Windows build).
+    property bool autoResume: true
+    signal autoResumeToggled(bool on)
+
+    LogosFrame {
+        Layout.fillWidth: true
+        padding: Theme.spacing.large
+        backgroundColor: Theme.palette.surfaceRaised
+        borderColor: "transparent"
+        radius: Theme.spacing.radiusLarge
+
+        contentItem: RowLayout {
+            spacing: Theme.spacing.medium
+            ColumnLayout {
+                Layout.fillWidth: true
+                spacing: Theme.spacing.tiny
+                LogosText {
+                    text: qsTr("Resume after restart")
+                    color: Theme.palette.text
+                    font.pixelSize: Theme.typography.panelTitleText
+                    font.weight: Theme.typography.weightMedium
+                }
+                LogosText {
+                    Layout.fillWidth: true
+                    wrapMode: Text.WordWrap
+                    color: Theme.palette.textSecondary
+                    font.pixelSize: Theme.typography.secondaryText
+                    text: qsTr("Updating or reinstalling this app, or restarting Basecamp, stops the node. When this is on, the node starts again with the same config and mining resumes once synced, unless you stopped them yourself with Stop Node or Stop Mining.")
+                }
+            }
+            LogosSwitch {
+                objectName: "autoResumeSwitch"
+                checked: root.autoResume
+                Accessible.name: qsTr("Resume node and mining after restart")
+                onToggled: root.autoResumeToggled(checked)
+            }
+        }
+    }
+
 
     LogosFrame {
         Layout.fillWidth: true

@@ -2,6 +2,7 @@ import QtQuick
 import QtQuick.Controls
 import QtQuick.Layouts
 import QtQuick.Window
+import QtCore
 
 import Logos.Theme
 import Logos.Controls
@@ -13,6 +14,8 @@ import Logos.BlockchainBackend 1.0
 import "controls"
 import "dialogs"
 import "views"
+import "Units.js" as Units
+import "WalletTools.js" as WalletTools
 
 Rectangle {
     id: root
@@ -225,6 +228,148 @@ Rectangle {
         }
     }
 
+    // ---- Auto-resume (yayguru Windows build) ----
+    // Reinstalling or updating this UI destroys BlockchainBackend, and its
+    // destructor stops the node (teardown must not leave an orphan node behind
+    // a closed app). Without this the node stays stopped after every update
+    // until someone presses Start Node. So the user's INTENT is persisted here:
+    // "the node should be running" (set when it reaches Running, cleared only by
+    // the user's own Stop Node) and "mining should be on" (set when mining
+    // starts, cleared only by Stop Mining). A fresh view that finds the node
+    // idle while the intent says otherwise starts it again with the SAME
+    // existing config and re-arms mining once synced. It never creates a config
+    // or opens setup, runs at most once per view and once per two minutes, and
+    // stays put if anything already answers on the node API, so it cannot start
+    // a second node. Not a watchdog: it acts only when the UI is (re)loaded.
+    Settings {
+        id: resumeStore
+        location: StandardPaths.writableLocation(StandardPaths.AppConfigLocation) + "/blockchain_ui_resume.ini"
+        category: "AutoResume"
+        property bool enabled: true
+        property bool nodeWanted: false
+        property bool miningWanted: false
+        property string configPath: ""
+        property double lastAttemptMs: 0
+    }
+
+    QtObject {
+        id: resume
+        objectName: "autoResume"
+        property bool nodeAttempted: false
+        property bool miningAttempted: false
+        property int idleTicks: 0
+        property string note: ""
+        // A status line, not a log: it goes away a minute after it last changed.
+        onNoteChanged: if (note.length) noteClear.restart()
+        property Timer noteClear: Timer { interval: 60000; onTriggered: resume.note = "" }
+        readonly property bool statusIdle: !!root.backend
+            && (root.backend.status === BlockchainBackend.NotStarted
+                || root.backend.status === BlockchainBackend.Stopped)
+
+        function nodeApiAlive(cb) {
+            var xhr = new XMLHttpRequest()
+            var done = false
+            xhr.onreadystatechange = function() {
+                if (xhr.readyState === XMLHttpRequest.DONE && !done) {
+                    done = true
+                    cb(xhr.status >= 200 && xhr.status < 500)
+                }
+            }
+            xhr.timeout = 3000
+            xhr.ontimeout = function() { if (!done) { done = true; cb(false) } }
+            xhr.onerror = function() { if (!done) { done = true; cb(false) } }
+            try {
+                xhr.open("GET", "http://127.0.0.1:8080/cryptarchia/info")
+                xhr.send()
+            } catch (e) {
+                if (!done) { done = true; cb(false) }
+            }
+        }
+
+        function tick() {
+            if (nodeAttempted || !root.ready || !root.backend)
+                return
+            if (!resumeStore.enabled || !resumeStore.nodeWanted)
+                return
+            if (root.setupOpen || !root.hasConfig || root.quitting)
+                return
+            // Only the config the node last ran with. A changed or newly
+            // generated config is the user's business, not ours.
+            if (resumeStore.configPath.length === 0
+                    || root.backend.userConfig !== resumeStore.configPath)
+                return
+            if (root.backend.configState === BlockchainBackend.ConfigStale
+                    || root.backend.configState === BlockchainBackend.ConfigUnreadable)
+                return
+            // A fresh replica can read NotStarted before it has asked the module;
+            // insist on idle for three ticks in a row (~9 s) before acting.
+            if (!statusIdle) { idleTicks = 0; return }
+            idleTicks += 1
+            if (idleTicks < 3)
+                return
+            if (Date.now() - resumeStore.lastAttemptMs < 120000)
+                return
+            nodeAttempted = true
+            nodeApiAlive(function(alive) {
+                if (alive) {
+                    resume.note = qsTr("A node already answers on 127.0.0.1:8080; not starting another one.")
+                    return
+                }
+                if (!resume.statusIdle || !root.backend)
+                    return
+                resumeStore.lastAttemptMs = Date.now()
+                resume.note = qsTr("Resuming the node after the app or UI was restarted…")
+                root.backend.startBlockchain()
+            })
+        }
+
+        function tickMining() {
+            if (miningAttempted || !root.backend)
+                return
+            if (!resumeStore.enabled || !resumeStore.miningWanted)
+                return
+            if (!root.nodeRunning || !monitor.synced || root.backend.miningActive)
+                return
+            miningAttempted = true
+            logos.watch(root.backend.powStartMining(),
+                function(result) {
+                    resume.note = result.success ? (resume.nodeAttempted ? qsTr("Node and mining resumed.") : qsTr("Mining resumed."))
+                                                 : qsTr("Could not resume mining: %1").arg(_d.errorText(result.error))
+                },
+                function(error) { resume.note = qsTr("Could not resume mining: %1").arg(_d.errorText(error)) })
+        }
+    }
+
+    Timer {
+        interval: 3000
+        repeat: true
+        running: root.ready && !resume.nodeAttempted && resumeStore.enabled && resumeStore.nodeWanted
+        onTriggered: resume.tick()
+    }
+    Timer {
+        interval: 5000
+        repeat: true
+        running: root.nodeRunning && !resume.miningAttempted && resumeStore.enabled && resumeStore.miningWanted
+        onTriggered: resume.tickMining()
+    }
+    Connections {
+        target: root.backend
+        enabled: root.backend !== null
+        ignoreUnknownSignals: true
+        function onStatusChanged() {
+            if (root.backend && root.backend.status === BlockchainBackend.Running) {
+                resumeStore.nodeWanted = true
+                resumeStore.configPath = root.backend.userConfig
+                if (resume.note.indexOf("Resuming") === 0)
+                    resume.note = resumeStore.miningWanted ? qsTr("Node resumed; mining resumes once synced.") : qsTr("Node resumed.")
+            }
+        }
+        function onMiningActiveChanged() {
+            if (root.backend && root.backend.miningActive)
+                resumeStore.miningWanted = true
+        }
+    }
+
     // Node status. Owns its own timers, backoff, sync debounce and progress
     // tracking; see controls/NodeStatusMonitor.qml. Sits outside any layout
     // because it is an Item with no visual presence.
@@ -394,8 +539,10 @@ Rectangle {
         // poll: its message lands in the hero's sub-line under a headline that
         // already gives the verdict, and a replaying node answers that call with
         // a diagnosed *progress* message which "Error: " would contradict.
+        // Plain-language first, the node's own words after "Details" (see
+        // WalletTools.humanError), amounts in this locale's format.
         function errorText(message) {
-            return qsTr("Error: %1").arg(message)
+            return qsTr("Error: %1").arg(WalletTools.humanError(message, function(l) { return Units.format(l) }))
         }
 
         // Page 0 is setup, page 1 is the node. Derived, never assigned — see
@@ -628,6 +775,8 @@ Rectangle {
                         if (!root.backend)
                             return
                         _d.miningError = ""
+                        // The user's own choice is the intent auto-resume follows.
+                        resumeStore.miningWanted = !opPage.miningActive
                         logos.watch(
                             opPage.miningActive ? root.backend.powStopMining()
                                           : root.backend.powStartMining(),
@@ -654,6 +803,10 @@ Rectangle {
                         if (!root.backend)
                             return
                         if (opPage.canStop) {
+                            // Stopped on purpose: do not bring it back on the next load.
+                            resumeStore.nodeWanted = false
+                            resumeStore.miningWanted = false
+                            resume.note = ""
                             root.backend.stopBlockchain()
                             return
                         }
@@ -665,6 +818,17 @@ Rectangle {
                         root.backend.startBlockchain()
                     }
                 }
+            }
+
+            LogosText {
+                objectName: "autoResumeNote"
+                Layout.fillWidth: true
+                visible: resume.note.length > 0
+                text: resume.note
+                Accessible.name: text
+                font.pixelSize: Theme.typography.secondaryText
+                color: Theme.palette.textSecondary
+                wrapMode: Text.WordWrap
             }
 
             LogosTabBar {
@@ -1156,6 +1320,8 @@ Rectangle {
                         root.backend.deploymentConfig = path
                     }
                     onStartNewNodeRequested: root.openSetup(true)
+                    autoResume: resumeStore.enabled
+                    onAutoResumeToggled: function(on) { resumeStore.enabled = on }
                     }
                 }
             }
