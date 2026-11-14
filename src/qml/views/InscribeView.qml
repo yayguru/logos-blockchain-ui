@@ -11,6 +11,9 @@ import "../controls"
 ColumnLayout {
     id: root
 
+    Layout.fillWidth: true
+    Layout.fillHeight: true
+
     property var accountRows: []
     property bool nodeRunning: false
     property string nodeOffReason: ""
@@ -145,184 +148,197 @@ ColumnLayout {
         reasonSeverity: root.nodeOffSeverity
     }
 
-    LogosText {
+    LogosScrollView {
+        id: inscribeScroll
         Layout.fillWidth: true
-        wrapMode: Text.WordWrap
-        text: qsTr("An inscription is public and permanent. You will see the fee first; nothing is sent until you confirm.")
-        color: Theme.palette.textSecondary
-    }
+        Layout.fillHeight: true
+        clip: true
 
-    LogosText { text: qsTr("Channel key file"); color: Theme.palette.textPrimary }
-    RowLayout {
-        Layout.fillWidth: true
-        spacing: Theme.spacing.small
-        LogosTextField {
-            id: keyPathField
-            Layout.fillWidth: true
-            placeholderText: qsTr("Path to inscribe_key.json")
-        }
-        LogosButton {
-            text: qsTr("Generate")
-            enabled: !d.pending
-            onClicked: {
-                var path = d.defaultKeyPath()
-                if (!path.length)
-                    return
-                keyPathField.text = path
-                d.pending = true
-                root.keygenRequested(path)
+        ColumnLayout {
+            width: inscribeScroll.availableWidth
+            spacing: Theme.spacing.large
+
+
+            LogosText {
+                Layout.fillWidth: true
+                wrapMode: Text.WordWrap
+                text: qsTr("An inscription is public and permanent. You will see the fee first; nothing is sent until you confirm.")
+                color: Theme.palette.textSecondary
             }
-        }
-        LogosButton {
-            text: qsTr("Load id")
-            enabled: !d.pending && d.defaultKeyPath().length
-            onClicked: {
-                d.pending = true
-                root.identRequested(d.defaultKeyPath())
-            }
-        }
-    }
 
-    LogosText { text: qsTr("Channel id (optional; default is LXM1 of the channel key)"); color: Theme.palette.textPrimary }
-    LogosTextField {
-        id: channelIdField
-        Layout.fillWidth: true
-        placeholderText: "64 hex characters"
-    }
-
-    LogosText { text: qsTr("Parent message id (optional; default is the channel tip or root)"); color: Theme.palette.textPrimary }
-    LogosTextField {
-        id: parentField
-        Layout.fillWidth: true
-        placeholderText: "64 hex characters"
-    }
-
-    RowLayout {
-        LogosButton {
-            text: qsTr("Text")
-            variant: d.mode === 0 ? LogosButton.Variant.Primary : LogosButton.Variant.Secondary
-            onClicked: d.mode = 0
-        }
-        LogosButton {
-            text: qsTr("File")
-            variant: d.mode === 1 ? LogosButton.Variant.Primary : LogosButton.Variant.Secondary
-            onClicked: d.mode = 1
-        }
-    }
-
-    LogosTextArea {
-        id: textArea
-        Layout.fillWidth: true
-        Layout.preferredHeight: 140
-        visible: d.mode === 0
-        placeholderText: qsTr("Text to write on-chain")
-        wrapMode: TextEdit.Wrap
-    }
-
-    RowLayout {
-        Layout.fillWidth: true
-        visible: d.mode === 1
-        LogosTextField {
-            id: filePathField
-            Layout.fillWidth: true
-            placeholderText: qsTr("File to inscribe")
-            readOnly: true
-        }
-        LogosButton {
-            text: qsTr("Browse")
-            onClicked: fileDialog.open()
-        }
-    }
-
-    FileDialog {
-        id: fileDialog
-        title: qsTr("Select a file to inscribe")
-        fileMode: FileDialog.OpenFile
-        onAccepted: {
-            var u = selectedFile.toString()
-            if (u.indexOf("file://") === 0)
-                u = u.substring(7)
-            // Windows file:///C:/...
-            if (u.indexOf("/") === 0 && u.length > 2 && u[2] === ":")
-                u = u.substring(1)
-            filePathField.text = u
-        }
-    }
-
-    LogosText { text: qsTr("Fee paid from"); color: Theme.palette.textPrimary }
-    LogosComboBox {
-        id: fundingCombo
-        Layout.fillWidth: true
-        implicitHeight: 40
-        model: {
-            var labels = []
-            for (var i = 0; i < root.accountRows.length; ++i) {
-                var r = root.accountRows[i]
-                labels.push((r.name || r.title || "") + " " + String(r.address || "").slice(0, 12) + "…")
-            }
-            return labels
-        }
-    }
-
-    RowLayout {
-        LogosButton {
-            text: qsTr("Estimate fee")
-            enabled: !d.pending && root.nodeRunning
-            onClicked: {
-                var err = d.validForPreview()
-                if (err.length) {
-                    d.previewOk = false
-                    d.previewText = err
-                    return
+            LogosText { text: qsTr("Channel key file"); color: Theme.palette.text }
+            RowLayout {
+                Layout.fillWidth: true
+                spacing: Theme.spacing.small
+                LogosTextField {
+                    id: keyPathField
+                    Layout.fillWidth: true
+                    placeholderText: qsTr("Path to inscribe_key.json")
                 }
-                d.pending = true
-                d.estimatedFee = ""
-                d.txHash = ""
-                root.estimateRequested(d.buildRequest(true))
+                LogosButton {
+                    text: qsTr("Generate")
+                    enabled: !d.pending
+                    onClicked: {
+                        var path = d.defaultKeyPath()
+                        if (!path.length)
+                            return
+                        keyPathField.text = path
+                        d.pending = true
+                        root.keygenRequested(path)
+                    }
+                }
+                LogosButton {
+                    text: qsTr("Load id")
+                    enabled: !d.pending && d.defaultKeyPath().length
+                    onClicked: {
+                        d.pending = true
+                        root.identRequested(d.defaultKeyPath())
+                    }
+                }
             }
-        }
-        LogosButton {
-            text: qsTr("Confirm and send")
-            enabled: !d.pending && root.nodeRunning && d.estimatedFee.length > 0 && confirmBox.checked
-            onClicked: {
-                d.pending = true
-                root.submitRequested(d.buildRequest(false))
+
+            LogosText { text: qsTr("Channel id (optional; default is LXM1 of the channel key)"); color: Theme.palette.text }
+            LogosTextField {
+                id: channelIdField
+                Layout.fillWidth: true
+                placeholderText: "64 hex characters"
             }
+
+            LogosText { text: qsTr("Parent message id (optional; default is the channel tip or root)"); color: Theme.palette.text }
+            LogosTextField {
+                id: parentField
+                Layout.fillWidth: true
+                placeholderText: "64 hex characters"
+            }
+
+            RowLayout {
+                LogosButton {
+                    text: qsTr("Text")
+                    variant: d.mode === 0 ? LogosButton.Variant.Primary : LogosButton.Variant.Secondary
+                    onClicked: d.mode = 0
+                }
+                LogosButton {
+                    text: qsTr("File")
+                    variant: d.mode === 1 ? LogosButton.Variant.Primary : LogosButton.Variant.Secondary
+                    onClicked: d.mode = 1
+                }
+            }
+
+            LogosTextArea {
+                id: textArea
+                Layout.fillWidth: true
+                Layout.preferredHeight: 140
+                visible: d.mode === 0
+                placeholderText: qsTr("Text to write on-chain")
+                wrapMode: TextEdit.Wrap
+            }
+
+            RowLayout {
+                Layout.fillWidth: true
+                visible: d.mode === 1
+                LogosTextField {
+                    id: filePathField
+                    Layout.fillWidth: true
+                    placeholderText: qsTr("File to inscribe")
+                    readOnly: true
+                }
+                LogosButton {
+                    text: qsTr("Browse")
+                    onClicked: fileDialog.open()
+                }
+            }
+
+            FileDialog {
+                id: fileDialog
+                title: qsTr("Select a file to inscribe")
+                fileMode: FileDialog.OpenFile
+                onAccepted: {
+                    var u = selectedFile.toString()
+                    if (u.indexOf("file://") === 0)
+                        u = u.substring(7)
+                    // Windows file:///C:/...
+                    if (u.indexOf("/") === 0 && u.length > 2 && u[2] === ":")
+                        u = u.substring(1)
+                    filePathField.text = u
+                }
+            }
+
+            LogosText { text: qsTr("Fee paid from"); color: Theme.palette.text }
+            LogosComboBox {
+                id: fundingCombo
+                Layout.fillWidth: true
+                implicitHeight: 40
+                model: {
+                    var labels = []
+                    for (var i = 0; i < root.accountRows.length; ++i) {
+                        var r = root.accountRows[i]
+                        labels.push((r.name || r.title || "") + " " + String(r.address || "").slice(0, 12) + "…")
+                    }
+                    return labels
+                }
+            }
+
+            RowLayout {
+                LogosButton {
+                    text: qsTr("Estimate fee")
+                    enabled: !d.pending && root.nodeRunning
+                    onClicked: {
+                        var err = d.validForPreview()
+                        if (err.length) {
+                            d.previewOk = false
+                            d.previewText = err
+                            return
+                        }
+                        d.pending = true
+                        d.estimatedFee = ""
+                        d.txHash = ""
+                        root.estimateRequested(d.buildRequest(true))
+                    }
+                }
+                LogosButton {
+                    text: qsTr("Confirm and send")
+                    enabled: !d.pending && root.nodeRunning && d.estimatedFee.length > 0 && confirmBox.checked
+                    onClicked: {
+                        d.pending = true
+                        root.submitRequested(d.buildRequest(false))
+                    }
+                }
+            }
+
+            RowLayout {
+                visible: d.estimatedFee.length > 0
+                spacing: Theme.spacing.small
+                LogosSwitch { id: confirmBox; checked: false }
+                LogosText {
+                    Layout.fillWidth: true
+                    wrapMode: Text.WordWrap
+                    text: qsTr("I understand this is public, permanent, and costs about %1 base units.").arg(d.estimatedFee)
+                }
+            }
+
+            LogosText {
+                visible: d.estimatedFee.length > 0
+                text: qsTr("Estimated fee: %1 base units (includes 12% priority). Nothing has been sent.").arg(d.estimatedFee)
+                color: Theme.palette.text
+                wrapMode: Text.WordWrap
+                Layout.fillWidth: true
+            }
+
+            HashRow {
+                visible: d.txHash.length > 0
+                label: qsTr("Transaction")
+                value: d.txHash
+                onCopyRequested: root.copyToClipboard(d.txHash)
+            }
+
+            LogosText {
+                visible: d.previewText.length > 0 && d.txHash.length === 0
+                text: d.previewText
+                color: d.previewOk ? Theme.palette.textSecondary : Theme.palette.danger
+                wrapMode: Text.WrapAnywhere
+                Layout.fillWidth: true
+            }
+
         }
     }
-
-    RowLayout {
-        visible: d.estimatedFee.length > 0
-        spacing: Theme.spacing.small
-        LogosSwitch { id: confirmBox; checked: false }
-        LogosText {
-            Layout.fillWidth: true
-            wrapMode: Text.WordWrap
-            text: qsTr("I understand this is public, permanent, and costs about %1 base units.").arg(d.estimatedFee)
-        }
-    }
-
-    LogosText {
-        visible: d.estimatedFee.length > 0
-        text: qsTr("Estimated fee: %1 base units (includes 12% priority). Nothing has been sent.").arg(d.estimatedFee)
-        color: Theme.palette.textPrimary
-        wrapMode: Text.WordWrap
-        Layout.fillWidth: true
-    }
-
-    HashRow {
-        visible: d.txHash.length > 0
-        label: qsTr("Transaction")
-        value: d.txHash
-        onCopyRequested: root.copyToClipboard(d.txHash)
-    }
-
-    LogosText {
-        visible: d.previewText.length > 0 && d.txHash.length === 0
-        text: d.previewText
-        color: d.previewOk ? Theme.palette.textSecondary : Theme.palette.danger
-        wrapMode: Text.WrapAnywhere
-        Layout.fillWidth: true
-    }
-
 }
