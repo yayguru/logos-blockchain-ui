@@ -20,3 +20,6 @@ WalletView 1.0 WalletView.qml
 NodeDashboardView 1.0 NodeDashboardView.qml
 NodeSettingsView 1.0 NodeSettingsView.qml
 InfoSections 1.0 InfoSections.qml
+InscribeView 1.0 InscribeView.qml
+ChannelWithdrawView 1.0 ChannelWithdrawView.qml
+SdpView 1.0 SdpView.qml

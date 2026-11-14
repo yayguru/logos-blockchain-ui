@@ -197,6 +197,17 @@ class BlockchainBackend
     SLOT(QVariantMap generateConfig(QString outputPath, QStringList initialPeers, int netPort, int blendPort, QString httpAddr, QString externalAddress, bool noPublicIpCheck, int deploymentMode, QString deploymentConfigPath, bool newNode))
     SLOT(QVariantMap getNotes(QString walletAddressHex, QString optionalTipHex))
     SLOT(QVariantMap channelDepositWithNotes(QString channelIdHex, QStringList inputNoteIdHexes, QString metadataBase58, QString changePublicKeyHex, QStringList fundingPublicKeyHexes, QString maxTxFee, QString optionalTipHex))
+    SLOT(QVariantMap channelInscribe(QString requestJson))
+    SLOT(QVariantMap channelWithdraw(QString requestJson))
+    SLOT(QVariantMap channelKeygen(QString keyPath))
+    SLOT(QVariantMap channelKeyIdent(QString keyPath))
+    SLOT(QVariantMap getGasPrices())
+    SLOT(QVariantMap sdpGetDeclarations())
+    SLOT(QVariantMap sdpGetSnapshot())
+    SLOT(QVariantMap sdpGetFinalizedDeclarations(QString serviceType))
+    SLOT(QVariantMap sdpPostDeclaration(QString requestJson))
+    SLOT(QVariantMap sdpPostActivity(QString requestJson))
+    SLOT(QVariantMap sdpPostWithdrawal(QString requestJson))
     // A stop the user asked for was refused. Deliberately a signal, not a state:
     // the node is still running and still catching up, so the status must keep
     // saying so — this is a one-off "that didn't work, try again", not a mode

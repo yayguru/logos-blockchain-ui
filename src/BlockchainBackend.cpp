@@ -3570,6 +3570,70 @@ QVariantMap BlockchainBackend::channelDepositWithNotes(
         args)));
 }
 
+QVariantMap BlockchainBackend::invokeJsonMethod(const QString& method, const QVariantList& args)
+{
+    if (!m_blockchainClient)
+        return result::toVariantMap(result::err(QStringLiteral("Module not initialized.")));
+    return result::toVariantMap(result::toLogosResult(m_blockchainClient->invokeRemoteMethod(
+        BLOCKCHAIN_MODULE_NAME, method, args)));
+}
+
+QVariantMap BlockchainBackend::channelInscribe(QString requestJson)
+{
+    return invokeJsonMethod(QStringLiteral("channel_inscribe"), QVariantList{requestJson});
+}
+
+QVariantMap BlockchainBackend::channelWithdraw(QString requestJson)
+{
+    return invokeJsonMethod(QStringLiteral("channel_withdraw"), QVariantList{requestJson});
+}
+
+QVariantMap BlockchainBackend::channelKeygen(QString keyPath)
+{
+    return invokeJsonMethod(QStringLiteral("channel_keygen"), QVariantList{keyPath});
+}
+
+QVariantMap BlockchainBackend::channelKeyIdent(QString keyPath)
+{
+    return invokeJsonMethod(QStringLiteral("channel_key_ident"), QVariantList{keyPath});
+}
+
+QVariantMap BlockchainBackend::getGasPrices()
+{
+    return invokeJsonMethod(QStringLiteral("get_gas_prices"), QVariantList{});
+}
+
+QVariantMap BlockchainBackend::sdpGetDeclarations()
+{
+    return invokeJsonMethod(QStringLiteral("sdp_get_declarations"), QVariantList{});
+}
+
+QVariantMap BlockchainBackend::sdpGetSnapshot()
+{
+    return invokeJsonMethod(QStringLiteral("sdp_get_snapshot"), QVariantList{});
+}
+
+QVariantMap BlockchainBackend::sdpGetFinalizedDeclarations(QString serviceType)
+{
+    return invokeJsonMethod(QStringLiteral("sdp_get_finalized_declarations"), QVariantList{serviceType});
+}
+
+QVariantMap BlockchainBackend::sdpPostDeclaration(QString requestJson)
+{
+    return invokeJsonMethod(QStringLiteral("sdp_post_declaration"), QVariantList{requestJson});
+}
+
+QVariantMap BlockchainBackend::sdpPostActivity(QString requestJson)
+{
+    return invokeJsonMethod(QStringLiteral("sdp_post_activity"), QVariantList{requestJson});
+}
+
+QVariantMap BlockchainBackend::sdpPostWithdrawal(QString requestJson)
+{
+    return invokeJsonMethod(QStringLiteral("sdp_post_withdrawal"), QVariantList{requestJson});
+}
+
+
 void BlockchainBackend::clearBlocks()
 {
     m_blockModel->clear();

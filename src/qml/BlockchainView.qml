@@ -874,6 +874,7 @@ Rectangle {
                     accountRows: root.backend ? root.backend.accountRows : []
                     nodeRunning: opPage.nodeRunning
                     lezChannelId: root.backend ? root.backend.lezChannelId : ""
+                    nodeDataDir: root.backend ? root.backend.nodeDataDir : ""
 
                     onRefreshAccountsRequested: if (root.backend) root.backend.refreshAccounts()
 
@@ -919,6 +920,98 @@ Rectangle {
                             },
                             function(error) { walletView.setSubmitResult(false, _d.errorText(error)) }
                         )
+                    }
+
+
+                    onInscribeEstimateRequested: function(requestJson) {
+                        if (!root.backend) return
+                        logos.watch(root.backend.channelInscribe(requestJson),
+                            function(result) {
+                                if (result.success) walletView.setInscribePreview(true, result.value)
+                                else walletView.setInscribePreview(false, _d.errorText(result.error))
+                            },
+                            function(error) { walletView.setInscribePreview(false, _d.errorText(error)) })
+                    }
+                    onInscribeSubmitRequested: function(requestJson) {
+                        if (!root.backend) return
+                        logos.watch(root.backend.channelInscribe(requestJson),
+                            function(result) {
+                                if (result.success) walletView.setInscribeResult(true, result.value)
+                                else walletView.setInscribeResult(false, _d.errorText(result.error))
+                            },
+                            function(error) { walletView.setInscribeResult(false, _d.errorText(error)) })
+                    }
+                    onWithdrawEstimateRequested: function(requestJson) {
+                        if (!root.backend) return
+                        logos.watch(root.backend.channelWithdraw(requestJson),
+                            function(result) {
+                                if (result.success) walletView.setWithdrawPreview(true, result.value)
+                                else walletView.setWithdrawPreview(false, _d.errorText(result.error))
+                            },
+                            function(error) { walletView.setWithdrawPreview(false, _d.errorText(error)) })
+                    }
+                    onWithdrawSubmitRequested: function(requestJson) {
+                        if (!root.backend) return
+                        logos.watch(root.backend.channelWithdraw(requestJson),
+                            function(result) {
+                                if (result.success) walletView.setWithdrawResult(true, result.value)
+                                else walletView.setWithdrawResult(false, _d.errorText(result.error))
+                            },
+                            function(error) { walletView.setWithdrawResult(false, _d.errorText(error)) })
+                    }
+                    onChannelKeygenRequested: function(keyPath) {
+                        if (!root.backend) return
+                        logos.watch(root.backend.channelKeygen(keyPath),
+                            function(result) {
+                                if (result.success) walletView.setChannelIdent(true, result.value)
+                                else walletView.setChannelIdent(false, _d.errorText(result.error))
+                            },
+                            function(error) { walletView.setChannelIdent(false, _d.errorText(error)) })
+                    }
+                    onChannelIdentRequested: function(keyPath) {
+                        if (!root.backend) return
+                        logos.watch(root.backend.channelKeyIdent(keyPath),
+                            function(result) {
+                                if (result.success) walletView.setChannelIdent(true, result.value)
+                                else walletView.setChannelIdent(false, _d.errorText(result.error))
+                            },
+                            function(error) { walletView.setChannelIdent(false, _d.errorText(error)) })
+                    }
+                    onSdpStatusRequested: function(kind, serviceType) {
+                        if (!root.backend) return
+                        var call = kind === "snapshot" ? root.backend.sdpGetSnapshot()
+                                 : kind === "finalized" ? root.backend.sdpGetFinalizedDeclarations(serviceType)
+                                 : root.backend.sdpGetDeclarations()
+                        logos.watch(call,
+                            function(result) {
+                                if (result.success) walletView.setSdpStatus(true, result.value)
+                                else walletView.setSdpStatus(false, _d.errorText(result.error))
+                            },
+                            function(error) { walletView.setSdpStatus(false, _d.errorText(error)) })
+                    }
+                    onSdpPreviewRequested: function(kind, requestJson) {
+                        if (!root.backend) return
+                        var call = kind === "activity" ? root.backend.sdpPostActivity(requestJson)
+                                 : kind === "withdrawal" ? root.backend.sdpPostWithdrawal(requestJson)
+                                 : root.backend.sdpPostDeclaration(requestJson)
+                        logos.watch(call,
+                            function(result) {
+                                if (result.success) walletView.setSdpPreview(true, result.value)
+                                else walletView.setSdpPreview(false, _d.errorText(result.error))
+                            },
+                            function(error) { walletView.setSdpPreview(false, _d.errorText(error)) })
+                    }
+                    onSdpSubmitRequested: function(kind, requestJson) {
+                        if (!root.backend) return
+                        var call = kind === "activity" ? root.backend.sdpPostActivity(requestJson)
+                                 : kind === "withdrawal" ? root.backend.sdpPostWithdrawal(requestJson)
+                                 : root.backend.sdpPostDeclaration(requestJson)
+                        logos.watch(call,
+                            function(result) {
+                                if (result.success) walletView.setSdpResult(true, result.value)
+                                else walletView.setSdpResult(false, _d.errorText(result.error))
+                            },
+                            function(error) { walletView.setSdpResult(false, _d.errorText(error)) })
                     }
 
                     onCopyToClipboard: (text) => root.copyText(text)

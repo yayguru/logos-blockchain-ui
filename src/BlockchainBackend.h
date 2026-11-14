@@ -102,6 +102,17 @@ public slots:
                                     QStringList fundingPublicKeyHexes,
                                     QString maxTxFee,
                                     QString optionalTipHex) override;
+    QVariantMap channelInscribe(QString requestJson) override;
+    QVariantMap channelWithdraw(QString requestJson) override;
+    QVariantMap channelKeygen(QString keyPath) override;
+    QVariantMap channelKeyIdent(QString keyPath) override;
+    QVariantMap getGasPrices() override;
+    QVariantMap sdpGetDeclarations() override;
+    QVariantMap sdpGetSnapshot() override;
+    QVariantMap sdpGetFinalizedDeclarations(QString serviceType) override;
+    QVariantMap sdpPostDeclaration(QString requestJson) override;
+    QVariantMap sdpPostActivity(QString requestJson) override;
+    QVariantMap sdpPostWithdrawal(QString requestJson) override;
     QVariantMap powStartMining() override;
     QVariantMap powStopMining() override;
     QVariantMap powClaimableRewards() override;
@@ -124,6 +135,7 @@ public:
     void copyToClipboard(QString text) override;
 
 private:
+    QVariantMap invokeJsonMethod(const QString& method, const QVariantList& args);
     void fetchBalancesForAccounts(const QStringList& list);
     // Re-reads every tracked balance, throttled. Without this walletFunded is a
     // snapshot from node-start and the lifecycle lane never leaves "Fund your

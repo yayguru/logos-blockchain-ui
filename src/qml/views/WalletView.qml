@@ -6,7 +6,7 @@ import Logos.Controls
 
 import "../controls"
 
-// Wallet section: Accounts, Transfer and Channel Deposit behind a left menu.
+// Wallet section: Accounts, Transfer, Channel Deposit, Inscribe, Withdraw, SDP.
 RowLayout {
     id: root
 
@@ -22,6 +22,7 @@ RowLayout {
     // The LEZ channel a deposit can be pre-filled with, or empty when this
     // build carries none.
     property string lezChannelId: ""
+    property string nodeDataDir: ""
 
     // ---- Requests out (the host orchestrates these) ----
     signal refreshAccountsRequested()
@@ -31,6 +32,15 @@ RowLayout {
                            string metadataBase58, string changePublicKeyHex,
                            var fundingPublicKeyHexes, string maxTxFee,
                            string optionalTipHex)
+    signal inscribeEstimateRequested(string requestJson)
+    signal inscribeSubmitRequested(string requestJson)
+    signal withdrawEstimateRequested(string requestJson)
+    signal withdrawSubmitRequested(string requestJson)
+    signal channelKeygenRequested(string keyPath)
+    signal channelIdentRequested(string keyPath)
+    signal sdpStatusRequested(string kind, string serviceType)
+    signal sdpPreviewRequested(string kind, string requestJson)
+    signal sdpSubmitRequested(string kind, string requestJson)
     signal copyToClipboard(string text)
 
     // ---- Results back in ----
@@ -41,6 +51,17 @@ RowLayout {
     function setSubmitResult(success, value) {
         channelDepositView.setSubmitResult(success, value)
     }
+    function setInscribePreview(success, value) { inscribeView.setPreview(success, value) }
+    function setChannelIdent(success, value) {
+        inscribeView.setIdent(success, value)
+        withdrawView.setIdent(success, value)
+    }
+    function setInscribeResult(success, value) { inscribeView.setSubmitResult(success, value) }
+    function setWithdrawPreview(success, value) { withdrawView.setPreview(success, value) }
+    function setWithdrawResult(success, value) { withdrawView.setSubmitResult(success, value) }
+    function setSdpStatus(success, value) { sdpView.setStatus(success, value) }
+    function setSdpPreview(success, value) { sdpView.setPreview(success, value) }
+    function setSdpResult(success, value) { sdpView.setSubmitResult(success, value) }
 
     spacing: Theme.spacing.large
 
@@ -52,7 +73,10 @@ RowLayout {
             // rather than being unreachable, same as the tabs above.
             { label: qsTr("Accounts"), icon: "" },
             { label: qsTr("Transfer"), icon: "" },
-            { label: qsTr("Channel Deposit"), icon: "" }
+            { label: qsTr("Channel Deposit"), icon: "" },
+            { label: qsTr("Inscribe"), icon: "" },
+            { label: qsTr("Channel Withdraw"), icon: "" },
+            { label: qsTr("SDP"), icon: "" }
         ]
         nodeRunning: root.nodeRunning
         currentIndex: walletStack.currentIndex
@@ -105,6 +129,44 @@ RowLayout {
                     root.submitRequested(channelIdHex, inputNoteIdHexes, metadataBase58,
                                          changePublicKeyHex, fundingPublicKeyHexes,
                                          maxTxFee, optionalTipHex)
+                onCopyToClipboard: (text) => root.copyToClipboard(text)
+            }
+
+            InscribeView {
+                id: inscribeView
+                nodeOffSeverity: root.nodeOffSeverity
+                nodeOffReason: root.nodeOffReason
+                accountRows: root.accountRows
+                nodeRunning: root.nodeRunning
+                nodeDataDir: root.nodeDataDir
+                onEstimateRequested: (requestJson) => root.inscribeEstimateRequested(requestJson)
+                onSubmitRequested: (requestJson) => root.inscribeSubmitRequested(requestJson)
+                onKeygenRequested: (keyPath) => root.channelKeygenRequested(keyPath)
+                onIdentRequested: (keyPath) => root.channelIdentRequested(keyPath)
+                onCopyToClipboard: (text) => root.copyToClipboard(text)
+            }
+
+            ChannelWithdrawView {
+                id: withdrawView
+                nodeOffSeverity: root.nodeOffSeverity
+                nodeOffReason: root.nodeOffReason
+                accountRows: root.accountRows
+                nodeRunning: root.nodeRunning
+                nodeDataDir: root.nodeDataDir
+                onEstimateRequested: (requestJson) => root.withdrawEstimateRequested(requestJson)
+                onSubmitRequested: (requestJson) => root.withdrawSubmitRequested(requestJson)
+                onIdentRequested: (keyPath) => root.channelIdentRequested(keyPath)
+                onCopyToClipboard: (text) => root.copyToClipboard(text)
+            }
+
+            SdpView {
+                id: sdpView
+                nodeOffSeverity: root.nodeOffSeverity
+                nodeOffReason: root.nodeOffReason
+                nodeRunning: root.nodeRunning
+                onStatusRequested: (kind, serviceType) => root.sdpStatusRequested(kind, serviceType)
+                onPreviewRequested: (kind, requestJson) => root.sdpPreviewRequested(kind, requestJson)
+                onSubmitRequested: (kind, requestJson) => root.sdpSubmitRequested(kind, requestJson)
                 onCopyToClipboard: (text) => root.copyToClipboard(text)
             }
         }
