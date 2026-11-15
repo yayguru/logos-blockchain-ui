@@ -353,9 +353,9 @@ ColumnLayout {
                 Layout.fillWidth: true
                 wrapMode: Text.WordWrap
                 visible: root.nodeKeystorePath.length > 0
-                text: qsTr("One click saves a verified copy named keystore-backup-<date>.yaml to "
-                           + "Documents\\LogosBackups. Or choose a folder — a USB stick or a "
-                           + "cloud-synced folder is best. Then keep that file safe.")
+                text: qsTr("Saves a verified copy named keystore-backup-<date>.yaml into the folder "
+                           + "below (Documents\\LogosBackups unless you change it). A USB stick or a "
+                           + "cloud-synced folder is best. You never type a file name.")
                 color: Theme.palette.textTertiary
                 font.pixelSize: Theme.typography.secondaryText
             }
@@ -364,21 +364,35 @@ ColumnLayout {
                 Layout.fillWidth: true
                 Layout.topMargin: Theme.spacing.small
                 spacing: Theme.spacing.small
-                Item { Layout.fillWidth: true }
-                LogosButton {
-                    objectName: "backupKeystoreFolderButton"
-                    Accessible.name: text
-                    enabled: root.nodeKeystorePath.length > 0 && !root.backupBusy
-                    text: qsTr("Choose folder…")
-                    onClicked: { keystoreFolderDialog.target = "keystore"; keystoreFolderDialog.open() }
+
+                LogosTextField {
+                    id: backupFolderField
+                    objectName: "backupFolderField"
+                    Layout.fillWidth: true
+                    Accessible.name: qsTr("Backup folder")
+                    placeholderText: root.defaultBackupFolder
+                    text: root.defaultBackupFolder
                 }
+                LogosButton {
+                    objectName: "backupFolderBrowseButton"
+                    Accessible.name: text
+                    enabled: !root.backupBusy
+                    text: qsTr("Browse…")
+                    onClicked: backupFolderDialog.open()
+                }
+            }
+
+            RowLayout {
+                Layout.fillWidth: true
+                spacing: Theme.spacing.small
+                Item { Layout.fillWidth: true }
                 LogosButton {
                     objectName: "backupKeystoreButton"
                     Accessible.name: text
                     variant: LogosButton.Variant.Primary
                     enabled: root.nodeKeystorePath.length > 0 && !root.backupBusy
-                    text: qsTr("Save backup to Documents")
-                    onClicked: root.backupKeystoreRequested("")
+                    text: qsTr("Save keystore backup")
+                    onClicked: root.backupKeystoreRequested(backupFolderField.text.trim())
                 }
             }
 
@@ -409,18 +423,11 @@ ColumnLayout {
                     color: root.lezBackedUp ? Theme.palette.textSecondary : Theme.palette.warning
                 }
                 LogosButton {
-                    objectName: "backupLezAccountFolderButton"
-                    Accessible.name: text
-                    enabled: !root.backupBusy
-                    text: qsTr("Choose folder…")
-                    onClicked: { keystoreFolderDialog.target = "lez"; keystoreFolderDialog.open() }
-                }
-                LogosButton {
                     objectName: "backupLezAccountButton"
                     Accessible.name: text
                     enabled: !root.backupBusy
-                    text: qsTr("Save LEZ key to Documents")
-                    onClicked: root.backupLezAccountRequested("")
+                    text: qsTr("Save LEZ key backup")
+                    onClicked: root.backupLezAccountRequested(backupFolderField.text.trim())
                 }
             }
 
@@ -549,22 +556,27 @@ ColumnLayout {
     }
 
 
-    // A folder, not a file name: the name is ours (keystore-backup-<date>.yaml),
-    // so there is nothing for the user to type. selectedFolder is a URL
-    // (file:///C:/...); the backend turns it into a local path.
+    // Documents\LogosBackups as a local path (the dialog speaks URLs).
+    readonly property string defaultBackupFolder: {
+        const docs = OnboardingPaths.toLocalPath(
+            StandardPaths.writableLocation(StandardPaths.DocumentsLocation))
+        if (docs.length === 0)
+            return ""
+        return docs + (Qt.platform.os === "windows" ? "\\" : "/") + "LogosBackups"
+    }
+
+    // Only fills the folder field; saving is a separate button. The dialog
+    // answers with a URL (file:///C:/...), shown as a normal path.
     FolderDialog {
-        id: keystoreFolderDialog
-        property string target: "keystore"
-        title: target === "lez" ? qsTr("Choose a folder for the LEZ key backup")
-                                : qsTr("Choose a folder for the keystore backup")
+        id: backupFolderDialog
+        title: qsTr("Choose a folder for your key backups")
         modality: Qt.NonModal
-        currentFolder: StandardPaths.standardLocations(StandardPaths.DocumentsLocation)[0]
+        currentFolder: StandardPaths.writableLocation(StandardPaths.DocumentsLocation)
         onAccepted: {
-            const folder = String(selectedFolder)
-            if (target === "lez")
-                root.backupLezAccountRequested(folder)
-            else
-                root.backupKeystoreRequested(folder)
+            const local = OnboardingPaths.toLocalPath(String(selectedFolder))
+            console.log("backup folder picked:", local)
+            if (local.length > 0)
+                backupFolderField.text = local
         }
     }
 
