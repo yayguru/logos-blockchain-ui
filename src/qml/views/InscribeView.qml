@@ -357,6 +357,12 @@ ColumnLayout {
                 Accessible.name: text
             }
 
+            InscriptionHistory {
+                channelId: channelIdField.text
+                nodeRunning: root.nodeRunning
+                onCopyToClipboard: (text) => root.copyToClipboard(text)
+            }
+
         }
     }
 }

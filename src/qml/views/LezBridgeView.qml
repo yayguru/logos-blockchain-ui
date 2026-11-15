@@ -117,7 +117,10 @@ ColumnLayout {
         }
         d.depositTx = String(text)
         d.phase = 3
-        d.status = qsTr("Deposit submitted. The LEZ account is credited once this L1 block is final (LIB), which currently takes many hours.")
+        d.status = d.toLez
+                   ? qsTr("Deposit submitted. The LEZ account is credited once this L1 block is final (LIB), which currently takes many hours. Follow it in the tracker below.")
+                   : qsTr("Deposit submitted to channel %1. This is not the LEZ bridge channel, so no LEZ account will be credited; the note now sits in that channel.").arg(d.channelId)
+        tracker.addSent(d.depositTx, d.amountLepta, d.toLez ? d.recipient : "", d.channelId)
     }
 
     spacing: Theme.spacing.large
@@ -154,6 +157,12 @@ ColumnLayout {
         property string status: ""
         property string error: ""
 
+        // The chosen channel is the LEZ bridge channel (or no LEZ channel is
+        // configured, so we cannot tell). Any other channel is just a deposit
+        // into that channel; nothing credits a LEZ account then.
+        readonly property bool toLez: !root.lezChannelId.length
+                                      || channelId === root.lezChannelId.replace(/^0x/i, "").toLowerCase()
+        readonly property string dest: toLez ? qsTr("LEZ") : qsTr("channel %1…").arg(channelId.slice(0, 8))
         readonly property bool planReady: phase === 1 && !notesPending && !pricesPending
         readonly property bool needsSplit: exactNoteId.length === 0
 
@@ -410,7 +419,8 @@ ColumnLayout {
                     }
                     LogosText {
                         Layout.fillWidth: true
-                        text: qsTr("To LEZ account: %1").arg(d.recipient)
+                        text: d.toLez ? qsTr("To LEZ account: %1").arg(d.recipient)
+                                     : qsTr("To channel %1 (not the LEZ bridge; metadata %2)").arg(d.channelId).arg(d.recipient)
                         wrapMode: Text.WrapAnywhere
                         Accessible.name: text
                     }
@@ -433,13 +443,15 @@ ColumnLayout {
                         visible: d.planReady || d.phase >= 2
                         wrapMode: Text.WordWrap
                         text: d.needsSplit
-                              ? qsTr("Plan: 2 transactions. (1) split an exact %1-unit note off with a transfer to the same account, fee about %2; (2) deposit that note to LEZ, fee about %3, capped at %4. Total fees about %5 base units%6.")
+                              ? qsTr("Plan: 2 transactions. (1) split an exact %1-unit note off with a transfer to the same account, fee about %2; (2) deposit that note to %7, fee about %3, capped at %4. Total fees about %5 base units%6.")
                                     .arg(d.amountLepta).arg(d.splitFee).arg(d.depositFee).arg(d.depositCap)
                                     .arg(d.splitFee + d.depositFee)
                                     .arg(d.pricesLive ? qsTr(" (gas %1/%2)").arg(d.ep).arg(d.sp) : qsTr(" (default gas 1/7)"))
-                              : qsTr("Plan: 1 transaction. A note worth exactly %1 units already exists; deposit it to LEZ, fee about %2, capped at %3 base units%4.")
+                                    .arg(d.dest)
+                              : qsTr("Plan: 1 transaction. A note worth exactly %1 units already exists; deposit it to %5, fee about %2, capped at %3 base units%4.")
                                     .arg(d.amountLepta).arg(d.depositFee).arg(d.depositCap)
                                     .arg(d.pricesLive ? qsTr(" (gas %1/%2)").arg(d.ep).arg(d.sp) : qsTr(" (default gas 1/7)"))
+                                    .arg(d.dest)
                         Accessible.name: text
                     }
 
@@ -456,7 +468,8 @@ ColumnLayout {
                         LogosText {
                             Layout.fillWidth: true
                             wrapMode: Text.WordWrap
-                            text: qsTr("I checked the LEZ account and amount. A deposit cannot be undone from here.")
+                            text: d.toLez ? qsTr("I checked the LEZ account and amount. A deposit cannot be undone from here.")
+                                          : qsTr("I checked the channel and amount. Only that channel's key holder can withdraw it.")
                         }
                     }
                     RowLayout {
@@ -498,7 +511,7 @@ ColumnLayout {
                     }
                     HashRow {
                         visible: d.depositTx.length > 0
-                        label: qsTr("LEZ deposit")
+                        label: d.toLez ? qsTr("LEZ deposit") : qsTr("Deposit")
                         value: d.depositTx
                         onCopyRequested: root.copyToClipboard(d.depositTx)
                     }
@@ -533,6 +546,12 @@ ColumnLayout {
                 label: qsTr("Split transfer")
                 value: d.splitTx
                 onCopyRequested: root.copyToClipboard(d.splitTx)
+            }
+
+            LezDepositTracker {
+                id: tracker
+                lezChannelId: root.lezChannelId
+                nodeRunning: root.nodeRunning
             }
         }
     }

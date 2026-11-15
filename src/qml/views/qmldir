@@ -24,3 +24,5 @@ InfoSections 1.0 InfoSections.qml
 InscribeView 1.0 InscribeView.qml
 ChannelWithdrawView 1.0 ChannelWithdrawView.qml
 SdpView 1.0 SdpView.qml
+LezDepositTracker 1.0 LezDepositTracker.qml
+InscriptionHistory 1.0 InscriptionHistory.qml

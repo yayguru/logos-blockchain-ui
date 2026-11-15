@@ -76,9 +76,24 @@ and the estimated fee. Nothing is sent until you tick the confirmation box and p
 | Channel Deposit | Locks one of your notes into a channel | Advanced |
 | Inscribe | Writes a short text (≤ about 1 KB) into your own inscription channel | Fee about 3,900 for 42 bytes. The channel key is `inscribe_key.json` in the node data folder. |
 | Channel Withdraw | Releases notes deposited in **your** channel back to normal spendable notes | Needs that channel's key file (default `inscribe_key.json`), the channel id and the note ids. Press *Estimate fee* first. Fee about 3,900 for one note. |
-| SDP | Service Declaration Protocol: status, declarations, snapshot, plus declaration/activity/withdrawal forms | **A declaration locks a stake note of at least 1 token (1,000,000,000 base units) and registers you as a Blend provider.** Activity and withdrawal only work after a declaration. Mining does not need SDP. |
+| SDP | Service Declaration Protocol: status, declarations, snapshot, plus declaration/activity/withdrawal forms | **A declaration locks a stake note of at least 1 token (1,000,000,000 base units) and registers you as a Blend provider.** If the declaration uses the node's own Blend keys, the node switches to Blend *core* mode. It must then be reachable from the internet on the declared UDP/QUIC locator, which needs port forwarding and a firewall rule. It also does proof and cover-traffic work. Do not declare from a PC behind NAT. Activity needs a real Blend activity proof. Withdrawal unlocks the stake one epoch after the withdrawal takes effect. There is no slashing. Mining does not need SDP. |
 
 1 token = 1,000,000,000 base units ("lepta").
+
+### LEZ deposit tracker and inscription history (windows.9+)
+
+* **LEZ Bridge → Deposit tracker** follows every bridge deposit through four steps:
+  *Sent → In an L1 block → Final on L1 → Credited on LEZ*.
+  It shows how many slots are left until the L1 block is final (LIB),
+  and it watches the LEZ account balance through the public LEZ RPC (`testnet.lez.logos.co`).
+  New deposits are added automatically.
+  To follow an older deposit, enter its tx hash, amount, LEZ account and (optionally) the slot and the previous balance.
+  The list is kept in `blockchain_ui_lez_tracker.ini` and survives restarts. It only reads data and never sends anything.
+* If the channel field holds anything other than the LEZ bridge channel,
+  the bridge screen now says *"To channel …"* instead of LEZ. Nothing credits a LEZ account in that case.
+  Only the holder of that channel's key can withdraw the note again.
+* **Inscribe → Inscription history** shows what your channel has written on chain, newest first.
+  *Latest* jumps to the channel tip. *Scan older* walks back 400 blocks at a time. It reads from your own node only.
 
 ### Decimal separator
 
