@@ -180,7 +180,7 @@ LogosFrame {
                     visible: row.text.length > 0
                     wrapMode: Text.WrapAnywhere
                     text: row.text
-                    Accessible.name: qsTr("Inscription at slot %1: %2").arg(row.slot).arg(row.text)
+                    Accessible.name: qsTr("Inscription at slot %1: %2").arg(String(row.slot)).arg(row.text)
                 }
                 LogosText {
                     Layout.fillWidth: true
@@ -192,7 +192,7 @@ LogosFrame {
                     color: Theme.palette.textSecondary
                 }
                 HashRow {
-                    label: qsTr("Slot %1").arg(row.slot)
+                    label: qsTr("Slot %1").arg(String(row.slot))
                     value: row.tx
                     onCopyRequested: (t) => root.copyToClipboard(t)
                 }
