@@ -6,7 +6,7 @@ when the `LGX_SIGNING_JWK` repository secret is set, and uploads the package
 plus `SHA256SUMS` as a workflow artifact. Without the secret it uploads an
 unsigned package (Basecamp then shows it as unsigned).
 
-It lives here and not in `.github/workflows/` only because the token used to
+Enabled: the workflow now lives in `.github/workflows/windows-lgx.yml`.
 push this branch has no `workflow` scope. To enable it (repo owner, once):
 
 ```sh
