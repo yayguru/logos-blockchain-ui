@@ -984,7 +984,7 @@ Rectangle {
                 LogosButton {
                     id: fundMiningButton
                     objectName: "fundMiningButton"
-                    text: qsTr("Start Mining")
+                    text: qsTr("Start mining")
                     visible: !opPage.miningActive
                     enabled: opPage.nodeRunning && monitor.synced
                     LogosToolTip {
@@ -999,7 +999,7 @@ Rectangle {
                 LogosButton {
                     id: stopMiningButton
                     objectName: "stopMiningHeaderButton"
-                    text: qsTr("Stop Mining")
+                    text: qsTr("Stop mining")
                     visible: opPage.miningActive
                     enabled: opPage.nodeRunning
                     onClicked: _d.stopMining()
