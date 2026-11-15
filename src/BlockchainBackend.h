@@ -238,7 +238,7 @@ private:
     void refreshResourceUsage();
     // Disk is NOT part of that TODO: nothing in the stack measures it, so this
     // stays once liblogos exposes CPU and memory.
-    [[nodiscard]] QString nodeDataDir() const;
+    [[nodiscard]] QString nodeBaseDir() const;
     // The directory the chain database actually sits in, which is not the same
     // place in both layouts — see the .cpp.
     [[nodiscard]] QString nodeDatabaseDir() const;

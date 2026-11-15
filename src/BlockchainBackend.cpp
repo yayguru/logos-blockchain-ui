@@ -1500,7 +1500,7 @@ void BlockchainBackend::resolveNodePid()
 //
 // Unlike CPU and memory this is NOT covered by liblogos-co#219: nothing in the
 // stack measures disk, so this stays after that lands.
-QString BlockchainBackend::nodeDataDir() const
+QString BlockchainBackend::nodeBaseDir() const
 {
     const QString cfg = userConfig();
     if (cfg.trimmed().isEmpty())
@@ -1537,7 +1537,7 @@ QString BlockchainBackend::nodeDataDir() const
 // to delete.
 QString BlockchainBackend::nodeDatabaseDir() const
 {
-    const QString base = nodeDataDir();
+    const QString base = nodeBaseDir();
     if (base.isEmpty())
         return {};
     const QDir dir(base);
@@ -1571,7 +1571,7 @@ QString BlockchainBackend::nodeKeystorePath() const
             return besideConfig;
     }
 
-    return keystoreIn(nodeDataDir());
+    return keystoreIn(nodeBaseDir());
 }
 
 // Bootstrap peers, from this module's own metadata.json.
@@ -1766,7 +1766,7 @@ void BlockchainBackend::refreshDiskUsage()
     if (m_diskSampled.isValid() && m_diskSampled.elapsed() < kDiskSampleIntervalMs)
         return;
 
-    const QString base = nodeDataDir();
+    const QString base = nodeBaseDir();
     if (base.isEmpty()) {
         setNodeDiskUsedMb(-1.0);
         setNodeDiskFreeMb(-1.0);
@@ -3646,7 +3646,7 @@ QString BlockchainBackend::nextNodeFolder() const
 {
     static const QRegularExpression numbered(QStringLiteral("^node-\\d+$"));
 
-    QString root = nodeDataDir();
+    QString root = nodeBaseDir();
     if (root.isEmpty()) {
         const QString cfg = toLocalPath(userConfig().trimmed());
         if (cfg.isEmpty())
