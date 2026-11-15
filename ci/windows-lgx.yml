@@ -59,11 +59,11 @@ jobs:
         run: |
           if [ -z "$LGX_SIGNING_JWK" ]; then echo "No LGX_SIGNING_JWK secret: leaving the package unsigned."; exit 0; fi
           umask 077
-          key="$(mktemp)"
-          printf '%s' "$LGX_SIGNING_JWK" > "$key"
+          keydir="$(mktemp -d)"
+          printf '%s' "$LGX_SIGNING_JWK" > "$keydir/yayguru.jwk"
           LGX="nix run github:logos-co/logos-package/1eae01c2972dbd42cd11ad4c64a243ca45be8099#lgx --"
-          $LGX sign out/*.lgx --key "$key" --name yayguru --url https://github.com/yayguru > /dev/null
-          rm -f "$key"
+          $LGX sign out/*.lgx --key yayguru --keys-dir "$keydir" --name yayguru --url https://github.com/yayguru > /dev/null
+          rm -rf "$keydir"
           $LGX verify out/*.lgx
 
       - name: Checksums

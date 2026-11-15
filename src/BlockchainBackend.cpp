@@ -1199,11 +1199,6 @@ BlockchainBackend::BlockchainBackend(LogosAPI* logosAPI, QObject* parent)
     }
 
 
-    // Tells an app exit apart from this plugin being unloaded (a UI reinstall),
-    // which is all the destructor needs to know.
-    if (QCoreApplication::instance())
-        connect(QCoreApplication::instance(), &QCoreApplication::aboutToQuit, this,
-                [this]() { m_appQuitting = true; });
     QTimer::singleShot(0, this, &BlockchainBackend::adoptRunningNode);
 
     qDebug() << "BlockchainBackend: initialized";
@@ -1211,9 +1206,20 @@ BlockchainBackend::BlockchainBackend(LogosAPI* logosAPI, QObject* parent)
 
 void BlockchainBackend::adoptRunningNode()
 {
-    if (!m_blockchainClient || status() != NotStarted || !moduleIsAlive())
+    if (!m_blockchainClient || !moduleIsAlive())
         return;
     QPointer<BlockchainBackend> self(this);
+    m_blockchainClient->invokeRemoteMethodAsync(
+        BLOCKCHAIN_MODULE_NAME, QStringLiteral("autostart_get"), QVariantList{},
+        [self](QVariant reply) {
+            const LogosResult r = result::toLogosResult(reply);
+            if (self && r.success)
+                self->m_moduleAutostart = QJsonDocument::fromJson(r.value.toString().toUtf8())
+                                              .object().value(QStringLiteral("enabled")).toBool();
+        },
+        Timeout(5000));
+    if (status() != NotStarted)
+        return;
     m_blockchainClient->invokeRemoteMethodAsync(
         BLOCKCHAIN_MODULE_NAME, QStringLiteral("node_status"), QVariantList{},
         [self](QVariant reply) {
@@ -1245,14 +1251,21 @@ void BlockchainBackend::adoptRunningNode()
 
 QVariantMap BlockchainBackend::setNodeAutostart(bool enabled)
 {
-    return invokeJsonMethod(QStringLiteral("autostart_set"),
+    const QVariantMap reply = invokeJsonMethod(QStringLiteral("autostart_set"),
                             QVariantList{ enabled ? QStringLiteral("{\"enabled\":true}")
                                                   : QStringLiteral("{\"enabled\":false}") });
+    if (reply.value(QStringLiteral("success")).toBool())
+        m_moduleAutostart = enabled;
+    return reply;
 }
 
 QVariantMap BlockchainBackend::getNodeAutostart()
 {
-    return invokeJsonMethod(QStringLiteral("autostart_get"), QVariantList{});
+    const QVariantMap reply = invokeJsonMethod(QStringLiteral("autostart_get"), QVariantList{});
+    if (reply.value(QStringLiteral("success")).toBool())
+        m_moduleAutostart = QJsonDocument::fromJson(reply.value(QStringLiteral("value")).toString().toUtf8())
+                                .object().value(QStringLiteral("enabled")).toBool();
+    return reply;
 }
 
 QVariantMap BlockchainBackend::lezGetAccountBalance(QString accountBase58)
@@ -1315,19 +1328,15 @@ BlockchainBackend::~BlockchainBackend()
     if (!m_blockchainClient || !moduleIsAlive())
         return;
 
-    // A UI unload (reinstall, update) is not an app exit. A module that keeps
-    // autostart intent (windows.11+) is left running and the next UI adopts
-    // the node; its own destructor still stops it when its process ends.
-    const bool appExit = m_appQuitting || QCoreApplication::closingDown();
-    if (!appExit) {
-        const LogosResult autostart = result::toLogosResult(m_blockchainClient->invokeRemoteMethod(
-            BLOCKCHAIN_MODULE_NAME, QStringLiteral("autostart_get"), QVariantList{}, Timeout(3000)));
-        if (autostart.success
-                && QJsonDocument::fromJson(autostart.value.toString().toUtf8()).object()
-                       .value(QStringLiteral("enabled")).toBool()) {
-            qDebug() << "BlockchainBackend: UI unloaded; the node keeps running (autostart on)";
-            return;
-        }
+    // Basecamp tears the UI down (and its ui-host process with it) on a
+    // reinstall and even when another section opens, so this destructor cannot
+    // tell an app exit from a UI reload. With module autostart on (windows.11+,
+    // set by "Resume after restart") the module owns the node: it is left
+    // running here, the next UI adopts it, and the module's own destructor stops
+    // it when Basecamp unloads the module. No remote call: the flag is cached.
+    if (m_moduleAutostart) {
+        qDebug() << "BlockchainBackend: UI torn down; the node keeps running (module autostart on)";
+        return;
     }
 
     // Synchronous, unlike stopBlockchain(). This is teardown: there is nobody

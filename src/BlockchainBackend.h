@@ -143,7 +143,7 @@ private:
     // A node the module kept running while this UI was reloaded: take it over
     // instead of offering Start Node for a node that is already up.
     void adoptRunningNode();
-    bool m_appQuitting = false;
+    bool m_moduleAutostart = false; // last known module autostart flag (set/get)
     QString m_lezRpcUrl = QStringLiteral("https://testnet.lez.logos.co/");
     QNetworkAccessManager* m_net = nullptr;
     void fetchBalancesForAccounts(const QStringList& list);
