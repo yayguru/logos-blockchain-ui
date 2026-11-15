@@ -28,7 +28,13 @@ var status = {
         + "known state stays on screen and greys out rather than being replaced "
         + "by something worse, because a node that is busy looks exactly like "
         + "one that is silent. Only when it stops answering entirely is it "
-        + "reported as stopped.",
+        + "reported as stopped.\n\n"
+        + "The bar beneath has two halves. Online says whether mining (PoW) is on. "
+        + "Funded, Aged, Proposing and Earning are the stake track: once wallet "
+        + "notes have aged, the node enters the leader lottery with them, and "
+        + "each block it leads mints a leader voucher (Earning). That runs "
+        + "whether or not mining is on; mining rewards are counted separately "
+        + "on the Mining Rewards card.",
     states: [
         { label: "Not started",
           meaning: "The node is off, or was stopped. Nothing is running." },

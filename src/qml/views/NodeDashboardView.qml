@@ -147,11 +147,13 @@ Item {
                            .arg(root.powRewardsClaimed).arg(root.claimableTickets)
             if (root.powRewardsClaimed > 0) {
                 var mined = [qsTr("%n ticket(s)", "", root.powRewardsClaimed)]
+                if (!root.miningActive)
+                    mined.unshift(qsTr("Mining off"))
                 if (d.countingSince.length > 0)
                     mined.push(d.countingSince)
                 return mined.join(" \u00b7 ")
             }
-            return root.miningActive ? qsTr("no tickets claimed") : ""
+            return root.miningActive ? qsTr("no tickets claimed") : qsTr("Mining off")
         }
 
         function parseJson(text) {
@@ -773,7 +775,12 @@ Item {
                                 busyLabel: qsTr("Starting")
                             },
                             LogosStage {
-                                label: qsTr("Online")
+                                // Mining is shown here because it is the one
+                                // thing the stake stages below do NOT say:
+                                // Proposing/Earning come from aged stake and
+                                // leader vouchers, and run with mining off.
+                                label: root.miningActive ? qsTr("Online · Mining")
+                                                         : qsTr("Online · Mining off")
                                 busyLabel: qsTr("Syncing…")
                             },
                             LogosStage {
@@ -786,11 +793,11 @@ Item {
                                 busyLabel: qsTr("Aging")
                             },
                             LogosStage {
-                                label: qsTr("Proposing")
+                                label: qsTr("Proposing (stake)")
                                 busyLabel: qsTr("Waiting for a slot")
                             },
                             LogosStage {
-                                label: qsTr("Earning")
+                                label: qsTr("Earning (stake)")
                             }
                         ]
                     }
