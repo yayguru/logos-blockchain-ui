@@ -39,6 +39,9 @@ ColumnLayout {
     onBackupErrorChanged: backupResultNotice.shown = root.backupError.length > 0
     // Full path of the last verified copy (keystore or LEZ key), or empty.
     property string backupSavedPath: ""
+    signal showInFolderRequested(string path)
+    // What the folder dialog answered, shown under the folder field.
+    property string browseNote: ""
     property bool backupBusy: false
 
     signal backupKeystoreRequested(string destinationPath)
@@ -378,8 +381,27 @@ ColumnLayout {
                     Accessible.name: text
                     enabled: !root.backupBusy
                     text: qsTr("Browse…")
-                    onClicked: backupFolderDialog.open()
+                    onClicked: {
+                        root.browseNote = ""
+                        const start = OnboardingPaths.toFolderUrl(backupFolderField.text.trim() + "/x")
+                        if (start.length > 0) {
+                            backupFolderDialog.currentFolder = start
+                            backupFolderDialog.selectedFolder = start
+                        }
+                        backupFolderDialog.open()
+                    }
                 }
+            }
+
+            LogosText {
+                Accessible.name: text
+                Layout.fillWidth: true
+                wrapMode: Text.WordWrap
+                text: root.browseNote.length > 0 ? root.browseNote
+                      : qsTr("Tip: you can also paste any folder path into the field, for example "
+                             + "from the Explorer address bar.")
+                color: Theme.palette.textTertiary
+                font.pixelSize: Theme.typography.secondaryText
             }
 
             RowLayout {
@@ -393,6 +415,19 @@ ColumnLayout {
                     enabled: root.nodeKeystorePath.length > 0 && !root.backupBusy
                     text: qsTr("Save keystore backup")
                     onClicked: root.backupKeystoreRequested(backupFolderField.text.trim())
+                }
+            }
+
+            RowLayout {
+                Layout.fillWidth: true
+                visible: root.backupSavedPath.length > 0
+                spacing: Theme.spacing.small
+                Item { Layout.fillWidth: true }
+                LogosButton {
+                    objectName: "backupShowInFolderButton"
+                    Accessible.name: text
+                    text: qsTr("Show in folder")
+                    onClicked: root.showInFolderRequested(root.backupSavedPath)
                 }
             }
 
@@ -573,11 +608,22 @@ ColumnLayout {
         modality: Qt.NonModal
         currentFolder: StandardPaths.writableLocation(StandardPaths.DocumentsLocation)
         onAccepted: {
-            const local = OnboardingPaths.toLocalPath(String(selectedFolder))
+            // Some Qt Quick (non-native) dialog builds leave selectedFolder
+            // empty when you Open from inside the folder; fall back to the
+            // folder being shown.
+            let url = String(selectedFolder)
+            if (url.length === 0)
+                url = String(currentFolder)
+            const local = OnboardingPaths.toLocalPath(url)
             console.log("backup folder picked:", local)
-            if (local.length > 0)
+            if (local.length > 0) {
                 backupFolderField.text = local
+                root.browseNote = qsTr("Folder set. Now press Save keystore backup.")
+            } else {
+                root.browseNote = qsTr("The folder dialog did not return a folder. Paste the path into the field instead.")
+            }
         }
+        onRejected: root.browseNote = qsTr("No folder chosen. In the dialog, click a folder once, then Open — or paste the path into the field.")
     }
 
 

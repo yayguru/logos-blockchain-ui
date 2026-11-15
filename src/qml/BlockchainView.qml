@@ -1586,6 +1586,12 @@ Rectangle {
                     lezAccountPath: (_d.lez && _d.lez.path) ? _d.lez.path : ""
                     lezBackedUp: !!_d.lez && _d.lez.backed_up === true
                     onBackupLezAccountRequested: function(dest) { _d.backupLez(dest) }
+                    onShowInFolderRequested: function(path) {
+                        if (!root.backend) return
+                        logos.watch(root.backend.showInFolder(path),
+                            function(r) { if (!r.success) nodeSettingsView.backupError = String(r.error || "") },
+                            function(e) { nodeSettingsView.backupError = String(e) })
+                    }
                     onStartNewNodeRequested: root.openSetup(true)
                     autoResume: resumeStore.enabled
                     onAutoResumeToggled: function(on) { resumeStore.enabled = on }

@@ -31,6 +31,8 @@
 #include <QJsonDocument>
 #include <QJsonObject>
 #include <QDirIterator>
+#include <QDesktopServices>
+#include <QProcess>
 #include <QSettings>
 #include <QBuffer>
 #include <QImageReader>
@@ -1847,6 +1849,26 @@ QVariantMap BlockchainBackend::backupKeystore(QString destinationPath)
     // A verified copy exists, so the reminder is answered.
     markKeysBackedUp();
     return result::toVariantMap(r);
+}
+
+QVariantMap BlockchainBackend::showInFolder(QString path)
+{
+    const QString local = toLocalPath(path);
+    const QFileInfo fi(local);
+    if (local.trimmed().isEmpty() || !fi.exists())
+        return result::toVariantMap(result::err(QStringLiteral("Nothing to show at %1.").arg(local)));
+#ifdef Q_OS_WIN
+    // explorer /select,<file> opens the folder with the file highlighted.
+    const QString arg = fi.isDir() ? QDir::toNativeSeparators(fi.absoluteFilePath())
+                                   : QStringLiteral("/select,") + QDir::toNativeSeparators(fi.absoluteFilePath());
+    const bool ok = QProcess::startDetached(QStringLiteral("explorer.exe"), {arg});
+#else
+    const bool ok = QDesktopServices::openUrl(
+        QUrl::fromLocalFile(fi.isDir() ? fi.absoluteFilePath() : fi.absolutePath()));
+#endif
+    if (!ok)
+        return result::toVariantMap(result::err(QStringLiteral("Could not open the folder.")));
+    return result::toVariantMap(LogosResult{true, QDir::toNativeSeparators(fi.absoluteFilePath()), QVariant()});
 }
 
 void BlockchainBackend::refreshDiskUsage()

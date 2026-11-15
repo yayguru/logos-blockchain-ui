@@ -276,6 +276,9 @@ class BlockchainBackend
     // node still needs the original. Answers { success, value, error } with the
     // destination on success.
     SLOT(QVariantMap backupKeystore(QString destinationPath))
+    // Opens Explorer (or the platform file manager) on a backup the user just
+    // saved, with the file selected. Only an existing file or folder.
+    SLOT(QVariantMap showInFolder(QString path))
     // Every key the keystore holds, as rows { address, label } — not just the
     // ones the config wires to a job, which is what getConfigWalletKeys
     // answers. The setup wizard shows the whole set, because what has to be

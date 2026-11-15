@@ -137,6 +137,7 @@ public slots:
     void refreshAccountRoles();
     QVariantMap powConfigure(QString configPath, QString configJson) override;
     QVariantMap backupKeystore(QString destinationPath) override;
+    QVariantMap showInFolder(QString path) override;
     QVariantMap getKeystoreKeys(QString configPath) override;
 
 

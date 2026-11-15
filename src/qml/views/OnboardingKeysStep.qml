@@ -134,12 +134,13 @@ ColumnLayout {
             onClicked: root.downloadRequested("")
         }
 
-        LogosButton {
-            objectName: "keysFolderButton"
-            Accessible.name: text
-            enabled: root.keystorePath.length > 0
-            text: qsTr("Choose folder…")
-            onClicked: keystoreFolderDialog.open()
+        LogosText {
+            Layout.fillWidth: true
+            wrapMode: Text.WordWrap
+            text: qsTr("Saves Documents\\LogosBackups\\keystore-backup-<date>.yaml and checks the copy. "
+                       + "Settings → Back up your keys lets you pick another folder, e.g. a USB stick.")
+            color: Theme.palette.textTertiary
+            font.pixelSize: Theme.typography.secondaryText
         }
 
         Item { Layout.fillWidth: true }
@@ -166,14 +167,4 @@ ColumnLayout {
     }
 
     Item { Layout.fillHeight: true }
-
-    // A folder, not a file name: the backend names the copy
-    // keystore-backup-<date>.yaml and verifies it byte for byte.
-    FolderDialog {
-        id: keystoreFolderDialog
-        title: qsTr("Choose a folder for the keystore backup")
-        modality: Qt.NonModal
-        currentFolder: StandardPaths.standardLocations(StandardPaths.DocumentsLocation)[0]
-        onAccepted: root.downloadRequested(String(selectedFolder))
-    }
 }
