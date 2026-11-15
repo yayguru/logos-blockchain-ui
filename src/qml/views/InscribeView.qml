@@ -233,6 +233,7 @@ ColumnLayout {
 
 
             LogosText {
+                Accessible.name: text
                 Layout.fillWidth: true
                 wrapMode: Text.WordWrap
                 text: qsTr("An inscription is public and permanent. You will see the fee first; nothing is sent until you confirm.")
@@ -360,6 +361,7 @@ ColumnLayout {
                     source: d.imagePath.length ? (d.imagePath.indexOf("/") === 0 ? "file://" : "file:///") + d.imagePath : ""
                 }
                 LogosText {
+                    Accessible.name: text
                     visible: d.imagePath.length > 0 && d.imageError.length === 0 && d.imageSize >= 0
                     text: qsTr("%1 · %2 KB%3").arg(d.imageKind.toUpperCase()).arg((d.imageSize / 1024).toFixed(1))
                               .arg(imagePreview.status === Image.Ready
@@ -369,6 +371,7 @@ ColumnLayout {
                     color: Theme.palette.textSecondary
                 }
                 LogosText {
+                    Accessible.name: text
                     objectName: "imageErrorText"
                     Layout.fillWidth: true
                     visible: d.imageError.length > 0
@@ -378,6 +381,7 @@ ColumnLayout {
                     font.pixelSize: Theme.typography.secondaryText
                 }
                 LogosText {
+                    Accessible.name: text
                     Layout.fillWidth: true
                     wrapMode: Text.WordWrap
                     text: qsTr("The image's raw bytes go on chain as they are (metadata included), and anyone can read them back. Fees grow with size.")
@@ -467,6 +471,7 @@ ColumnLayout {
                 spacing: Theme.spacing.small
                 LogosSwitch { id: confirmBox; checked: false }
                 LogosText {
+                    Accessible.name: text
                     Layout.fillWidth: true
                     wrapMode: Text.WordWrap
                     text: qsTr("I understand this is public, permanent, and costs about %1 base units.").arg(d.estimatedFee)

@@ -40,6 +40,7 @@ LogosFrame {
         RowLayout {
             Layout.fillWidth: true
             LogosText {
+                Accessible.name: text
                 text: qsTr("Your LEZ account")
                 font.weight: Theme.typography.weightMedium
             }
@@ -72,6 +73,7 @@ LogosFrame {
         }
 
         LogosText {
+            Accessible.name: text
             Layout.fillWidth: true
             visible: !root.hasAccount
             wrapMode: Text.WordWrap
@@ -101,6 +103,7 @@ LogosFrame {
         }
 
         LogosText {
+            Accessible.name: text
             objectName: "lezAccountBalance"
             visible: root.hasAccount
             text: root.balance.length
@@ -111,6 +114,7 @@ LogosFrame {
         }
 
         LogosText {
+            Accessible.name: text
             Layout.fillWidth: true
             visible: root.hasAccount && root.account.backed_up !== true
             wrapMode: Text.WordWrap
@@ -121,6 +125,7 @@ LogosFrame {
         }
 
         LogosText {
+            Accessible.name: text
             Layout.fillWidth: true
             visible: root.error.length > 0
             wrapMode: Text.WordWrap

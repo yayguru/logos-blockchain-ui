@@ -675,6 +675,7 @@ Rectangle {
                         _d.threadsBusy = false
                         _d.threadsOk = r.success
                         if (!r.success) {
+                            console.log("threads: save failed: " + String(r.error) + " (live: " + liveError + ")")
                             _d.threadsMessage = qsTr("Could not save: %1").arg(_d.errorText(r.error))
                             return
                         }
@@ -707,6 +708,7 @@ Rectangle {
                     }
                     var v = {}
                     try { v = typeof result.value === "string" ? JSON.parse(result.value) : (result.value || {}) } catch (e) {}
+                    console.log("threads: live ok, persisted=" + v.persisted + (v.persist_error ? " error=" + v.persist_error : ""))
                     _d.threadsBusy = false
                     _d.threadsOk = true
                     _d.currentThreads = threads === "" ? "auto" : threads

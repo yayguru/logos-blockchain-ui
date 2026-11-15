@@ -189,6 +189,7 @@ ColumnLayout {
                 spacing: Theme.spacing.small
 
                 LogosText {
+                    Accessible.name: text
                     text: qsTr("Mining")
                     font.pixelSize: Theme.typography.subtitleText
                     font.weight: Theme.typography.weightMedium
@@ -216,6 +217,7 @@ ColumnLayout {
             }
 
             LogosText {
+                Accessible.name: text
                 Layout.fillWidth: true
                 wrapMode: Text.WordWrap
                 visible: root.nodeRunning && !root.miningActive && !root.synced
@@ -224,6 +226,7 @@ ColumnLayout {
                 color: Theme.palette.textTertiary
             }
             LogosText {
+                Accessible.name: text
                 Layout.fillWidth: true
                 wrapMode: Text.WordWrap
                 visible: root.miningError.length > 0
@@ -238,11 +241,13 @@ ColumnLayout {
                 spacing: Theme.spacing.small
 
                 LogosText {
+                    Accessible.name: text
                     text: qsTr("CPU threads")
                     font.pixelSize: Theme.typography.secondaryText
                     color: Theme.palette.text
                 }
                 LogosText {
+                    Accessible.name: text
                     objectName: "currentThreadsText"
                     text: root.currentThreads === "" ? ""
                           : root.currentThreads === "auto"
@@ -253,6 +258,7 @@ ColumnLayout {
                 }
                 Item { Layout.fillWidth: true }
                 LogosText {
+                    Accessible.name: text
                     text: qsTr("All cores")
                     font.pixelSize: Theme.typography.secondaryText
                     color: Theme.palette.textSecondary
@@ -270,6 +276,7 @@ ColumnLayout {
                     onClicked: threadsDial.value = Math.max(1, threadsDial.value - 1)
                 }
                 LogosText {
+                    Accessible.name: text
                     id: threadsDial
                     objectName: "threadsValue"
                     property int value: 1
@@ -303,6 +310,7 @@ ColumnLayout {
             }
 
             LogosText {
+                Accessible.name: text
                 Layout.fillWidth: true
                 wrapMode: Text.WordWrap
                 text: qsTr("More threads find tickets faster but leave less CPU for everything else. "
@@ -316,6 +324,7 @@ ColumnLayout {
                 visible: root.threadsMessage.length > 0
                 spacing: Theme.spacing.small
                 LogosText {
+                    Accessible.name: text
                     objectName: "threadsMessage"
                     Layout.fillWidth: true
                     wrapMode: Text.WordWrap
@@ -339,12 +348,14 @@ ColumnLayout {
         spacing: Theme.spacing.medium
 
         LogosText {
+            Accessible.name: text
             text: qsTr("Tickets")
             font.pixelSize: Theme.typography.subtitleText
             font.weight: Theme.typography.weightMedium
         }
 
         LogosText {
+            Accessible.name: text
             text: qsTr("Mining searches for tickets; unclaimed tickets expire.")
             color: Theme.palette.textTertiary
             font.pixelSize: Theme.typography.secondaryText
@@ -458,6 +469,7 @@ ColumnLayout {
         spacing: Theme.spacing.small
 
         LogosText {
+            Accessible.name: text
             text: qsTr("Auto-claim")
             font.pixelSize: Theme.typography.subtitleText
             font.weight: Theme.typography.weightMedium
@@ -472,6 +484,7 @@ ColumnLayout {
         Item { Layout.fillWidth: true }
 
         LogosText {
+            Accessible.name: text
             visible: root.autoClaimTick > 0
             text: root.autoClaimTickUnit === "slots"
                   ? qsTr("every %n slot(s)", "", root.autoClaimTick)
@@ -495,6 +508,7 @@ ColumnLayout {
     }
 
     LogosText {
+        Accessible.name: text
         Layout.fillWidth: true
         objectName: "autoClaimHint"
         visible: text.length > 0
@@ -518,6 +532,7 @@ ColumnLayout {
             spacing: Theme.spacing.small
 
             LogosText {
+                Accessible.name: text
                 visible: targetRow.accountLabel.length > 0
                 text: targetRow.accountLabel
                 font.pixelSize: Theme.typography.secondaryText
@@ -525,6 +540,7 @@ ColumnLayout {
             }
 
             LogosText {
+                Accessible.name: text
                 objectName: "claimTargetAddress"
                 Layout.fillWidth: true
                 Layout.minimumWidth: 0
@@ -543,6 +559,7 @@ ColumnLayout {
             }
 
             LogosText {
+                Accessible.name: text
                 objectName: "claimTargetBalance"
                 text: {
                     const balance = targetRow.modelData.balanceKnown
@@ -561,6 +578,7 @@ ColumnLayout {
 
     // ---- Manual claim ----
     LogosText {
+        Accessible.name: text
         Layout.topMargin: Theme.spacing.small
         text: qsTr("Manual claim")
         font.pixelSize: Theme.typography.subtitleText
@@ -568,6 +586,7 @@ ColumnLayout {
     }
 
     LogosText {
+        Accessible.name: text
         Layout.fillWidth: true
         wrapMode: Text.WordWrap
         text: qsTr("Pays the tickets mined so far. Leave the account unset to let the node pay "
@@ -633,6 +652,7 @@ ColumnLayout {
         spacing: Theme.spacing.medium
 
         LogosText {
+            Accessible.name: text
             text: qsTr("History")
             font.pixelSize: Theme.typography.subtitleText
             font.weight: Theme.typography.weightMedium
@@ -649,6 +669,7 @@ ColumnLayout {
         }
 
         LogosText {
+            Accessible.name: text
             visible: claimsList.count > 0
             text: qsTr("%n claim(s)", "", claimsList.count)
             color: Theme.palette.textTertiary
@@ -657,6 +678,7 @@ ColumnLayout {
     }
 
     LogosText {
+        Accessible.name: text
         Layout.fillWidth: true
         wrapMode: Text.WordWrap
         visible: claimsList.count === 0
