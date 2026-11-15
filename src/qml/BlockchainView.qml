@@ -713,8 +713,9 @@ Rectangle {
                     _d.threadsOk = true
                     _d.currentThreads = threads === "" ? "auto" : threads
                     _d.threadsMessage = v.persisted === false
-                        ? qsTr("Now mining with %1 (live). Could not save it to the config: %2").arg(label).arg(String(v.persist_error || ""))
-                        : qsTr("Now mining with %1 — applied live and saved to the config.").arg(label)
+                        ? qsTr("Set to %1 on the running node, but could not save it to the config: %2").arg(label).arg(String(v.persist_error || ""))
+                        : (wasMining ? qsTr("Now mining with %1 — applied live and saved to the config.").arg(label)
+                                     : qsTr("Set to %1 and saved to the config; used when you start mining.").arg(label))
                     // Re-arm: a no-op when mining is already on.
                     if (wasMining)
                         logos.watch(root.backend.powStartMining(), function(r) {}, function(e) {})

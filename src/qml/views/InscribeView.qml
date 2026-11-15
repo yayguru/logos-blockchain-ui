@@ -361,6 +361,7 @@ ColumnLayout {
                     asynchronous: true
                     cache: false
                     sourceSize.width: 720
+                    onStatusChanged: console.log("image preview: status=" + status + " src=" + String(source).substring(0, 22) + " len=" + String(source).length)
                     source: d.imageDataUrl.length ? d.imageDataUrl
                             : (d.imagePath.length ? (d.imagePath.indexOf("/") === 0 ? "file://" : "file:///") + d.imagePath : "")
                 }
