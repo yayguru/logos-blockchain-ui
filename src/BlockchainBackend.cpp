@@ -1785,8 +1785,12 @@ static LogosResult copyVerified(const QString& source, const QString& destinatio
     if (dest.trimmed().isEmpty())
         dest = defaultBackupFolder();
     QFileInfo di(dest);
-    // A folder, or a path that does not exist yet and has no file suffix.
-    const bool isFolder = di.isDir() || (!di.exists() && di.suffix().isEmpty());
+    // A folder, or a path that does not exist yet and does not end in a
+    // backup file suffix ("D:\\my.backups" is still a folder).
+    const QString sfx = di.suffix().toLower();
+    const bool looksLikeFile = sfx == QLatin1String("yaml") || sfx == QLatin1String("yml")
+                            || sfx == QLatin1String("json");
+    const bool isFolder = di.isDir() || (!di.exists() && !looksLikeFile);
 
     QString target;
     if (isFolder) {

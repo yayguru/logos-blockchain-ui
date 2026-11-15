@@ -40,8 +40,6 @@ ColumnLayout {
     // Full path of the last verified copy (keystore or LEZ key), or empty.
     property string backupSavedPath: ""
     signal showInFolderRequested(string path)
-    // What the folder dialog answered, shown under the folder field.
-    property string browseNote: ""
     property bool backupBusy: false
 
     signal backupKeystoreRequested(string destinationPath)
@@ -376,30 +374,15 @@ ColumnLayout {
                     placeholderText: root.defaultBackupFolder
                     text: root.defaultBackupFolder
                 }
-                LogosButton {
-                    objectName: "backupFolderBrowseButton"
-                    Accessible.name: text
-                    enabled: !root.backupBusy
-                    text: qsTr("Browse…")
-                    onClicked: {
-                        root.browseNote = ""
-                        const start = OnboardingPaths.toFolderUrl(backupFolderField.text.trim() + "/x")
-                        if (start.length > 0) {
-                            backupFolderDialog.currentFolder = start
-                            backupFolderDialog.selectedFolder = start
-                        }
-                        backupFolderDialog.open()
-                    }
-                }
             }
 
             LogosText {
                 Accessible.name: text
                 Layout.fillWidth: true
                 wrapMode: Text.WordWrap
-                text: root.browseNote.length > 0 ? root.browseNote
-                      : qsTr("Tip: you can also paste any folder path into the field, for example "
-                             + "from the Explorer address bar.")
+                text: qsTr("To use another folder (USB stick, cloud folder), open it in Explorer, "
+                           + "click the address bar, copy the path and paste it into the field above. "
+                           + "The folder is created if it does not exist.")
                 color: Theme.palette.textTertiary
                 font.pixelSize: Theme.typography.secondaryText
             }
@@ -600,32 +583,9 @@ ColumnLayout {
         return docs + (Qt.platform.os === "windows" ? "\\" : "/") + "LogosBackups"
     }
 
-    // Only fills the folder field; saving is a separate button. The dialog
-    // answers with a URL (file:///C:/...), shown as a normal path.
-    FolderDialog {
-        id: backupFolderDialog
-        title: qsTr("Choose a folder for your key backups")
-        modality: Qt.NonModal
-        currentFolder: StandardPaths.writableLocation(StandardPaths.DocumentsLocation)
-        onAccepted: {
-            // Some Qt Quick (non-native) dialog builds leave selectedFolder
-            // empty when you Open from inside the folder; fall back to the
-            // folder being shown.
-            let url = String(selectedFolder)
-            if (url.length === 0)
-                url = String(currentFolder)
-            const local = OnboardingPaths.toLocalPath(url)
-            console.log("backup folder picked:", local)
-            if (local.length > 0) {
-                backupFolderField.text = local
-                root.browseNote = qsTr("Folder set. Now press Save keystore backup.")
-            } else {
-                root.browseNote = qsTr("The folder dialog did not return a folder. Paste the path into the field instead.")
-            }
-        }
-        onRejected: root.browseNote = qsTr("No folder chosen. In the dialog, click a folder once, then Open — or paste the path into the field.")
-    }
-
+    // No folder dialog here on purpose: inside Basecamp the Qt Quick
+    // (non-native) FolderDialog does not report the folder the user picked,
+    // and its Save-file twin keeps Save greyed out. A plain path field works.
 
     FileDialog {
         id: userConfigFileDialog
