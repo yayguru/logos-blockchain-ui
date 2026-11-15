@@ -117,6 +117,14 @@ public slots:
     QVariantMap setNodeAutostart(bool enabled) override;
     QVariantMap getNodeAutostart() override;
     QVariantMap lezGetAccountBalance(QString accountBase58) override;
+    QVariantMap powSetMaxThreads(QString maxThreads) override;
+    QVariantMap inspectFile(QString path) override;
+    QVariantMap resetDatabase() override;
+    QVariantMap lezAccount() override;
+    QVariantMap lezCreateAccount() override;
+    QVariantMap backupLezAccount(QString destinationPath) override;
+    // Folder of the current user config (where keystore.yaml lives).
+    [[nodiscard]] QString configDir() const;
     QVariantMap powStartMining() override;
     QVariantMap powStopMining() override;
     QVariantMap powClaimableRewards() override;

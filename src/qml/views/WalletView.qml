@@ -26,6 +26,16 @@ RowLayout {
     // Read-only chain access ({ info(cb), block(id, cb) }) for the tracker and
     // inscription history.
     property var chain: null
+    // Built-in LEZ account (windows.13).
+    property bool lezSupported: false
+    property var lezAccount: ({ exists: false })
+    property string lezBalance: ""
+    property string lezError: ""
+    property bool lezBusy: false
+    signal lezCreateRequested()
+    signal lezRefreshRequested()
+    Component.onCompleted: root.lezRefreshRequested()
+    onVisibleChanged: if (visible) root.lezRefreshRequested()
 
     // ---- Requests out (the host orchestrates these) ----
     signal refreshAccountsRequested()
@@ -121,6 +131,13 @@ RowLayout {
                 nodeOffSeverity: root.nodeOffSeverity
                 nodeOffReason: root.nodeOffReason
                 accountsModel: root.accountsModel
+                lezSupported: root.lezSupported
+                lezAccount: root.lezAccount
+                lezBalance: root.lezBalance
+                lezError: root.lezError
+                lezBusy: root.lezBusy
+                onLezCreateRequested: root.lezCreateRequested()
+                onLezRefreshRequested: root.lezRefreshRequested()
                 onRefreshAccountsRequested: root.refreshAccountsRequested()
                 onCopyToClipboard: (text) => root.copyToClipboard(text)
             }
@@ -145,6 +162,13 @@ RowLayout {
                 nodeRunning: root.nodeRunning
                 lezChannelId: root.lezChannelId
                 chain: root.chain
+                lezSupported: root.lezSupported
+                lezAccount: root.lezAccount
+                lezBalance: root.lezBalance
+                lezError: root.lezError
+                lezBusy: root.lezBusy
+                onLezCreateRequested: root.lezCreateRequested()
+                onLezRefreshRequested: root.lezRefreshRequested()
                 onNotesRequested: (addressHex) => root.lezNotesRequested(addressHex)
                 onGasPricesRequested: root.gasPricesRequested("lez")
                 onSplitRequested: (fromKeyHex, amountTokens) =>

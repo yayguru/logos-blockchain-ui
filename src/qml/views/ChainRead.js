@@ -69,3 +69,37 @@ function hexToText(hex) {
     }
     return { text: printable ? s : "", printable: printable, size: bytes.length }
 }
+
+// ---- Image inscriptions (windows.13) ----
+// The image type of a payload from its magic bytes, or "".
+function imageKind(hex) {
+    var h = String(hex || "").replace(/^0x/i, "").toLowerCase()
+    if (h.indexOf("89504e470d0a1a0a") === 0) return "png"
+    if (h.indexOf("ffd8ff") === 0) return "jpeg"
+    if (h.indexOf("474946383761") === 0 || h.indexOf("474946383961") === 0) return "gif"
+    if (h.indexOf("52494646") === 0 && h.substr(16, 8) === "57454250") return "webp"
+    return ""
+}
+
+function hexToBase64(hex) {
+    var h = String(hex || "").replace(/^0x/i, "")
+    var al = "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/"
+    var out = []
+    var n = Math.floor(h.length / 2)
+    var b = function(i) { return parseInt(h.substr(2 * i, 2), 16) }
+    for (var i = 0; i < n; i += 3) {
+        var b0 = b(i), b1 = i + 1 < n ? b(i + 1) : 0, b2 = i + 2 < n ? b(i + 2) : 0
+        var t = (b0 << 16) | (b1 << 8) | b2
+        out.push(al[(t >> 18) & 63], al[(t >> 12) & 63],
+                 i + 1 < n ? al[(t >> 6) & 63] : "=",
+                 i + 2 < n ? al[t & 63] : "=")
+    }
+    return out.join("")
+}
+
+// data: URL for an image payload, or "" when it is not one of the four types.
+function imageDataUrl(hex) {
+    var k = imageKind(hex)
+    if (!k.length) return ""
+    return "data:image/" + k + ";base64," + hexToBase64(hex)
+}

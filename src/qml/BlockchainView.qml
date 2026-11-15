@@ -30,7 +30,7 @@ Rectangle {
     // Never-connected and lost-the-connection look identical in `status`, but
     // one is a fresh launch and the other is a node whose status is now stale.
     property bool everReady: false
-    onReadyChanged: if (root.ready) { root.everReady = true; resume.syncModuleAutostart() }
+    onReadyChanged: if (root.ready) { root.everReady = true; resume.syncModuleAutostart(); _d.refreshLez(); _d.loadPowConfig() }
 
     Connections {
         target: logos
@@ -347,7 +347,18 @@ Rectangle {
         enabled: root.backend !== null
         ignoreUnknownSignals: true
         function onStatusChanged() {
+            if (root.backend && _d.restartPending
+                    && root.backend.status === BlockchainBackend.Stopped) {
+                root.backend.startBlockchain()
+            }
             if (root.backend && root.backend.status === BlockchainBackend.Running) {
+                if (_d.restartPending) {
+                    _d.restartPending = false
+                    _d.threadsMessage = qsTr("Node restarted with the new thread count; mining resumes once synced.")
+                    resume.miningAttempted = false
+                }
+                _d.loadPowConfig()
+                _d.refreshLez()
                 resumeStore.nodeWanted = true
                 resumeStore.configPath = root.backend.userConfig
                 if (resume.note.indexOf("Resuming") === 0)
@@ -358,6 +369,8 @@ Rectangle {
             if (root.backend && root.backend.miningActive)
                 resumeStore.miningWanted = true
         }
+        function onUserConfigChanged() { _d.loadPowConfig(); _d.refreshLez() }
+        function onNodeKeystorePathChanged() { _d.refreshLez() }
     }
 
     // Read-only chain access for the wallet's tracker and inscription history.
@@ -380,6 +393,9 @@ Rectangle {
         // network, ui_qml may not. Absent on older backends.
         readonly property bool lezAvailable: !!(root.backend && typeof root.backend.lezGetAccountBalance === "function")
         function lezBalance(account, cb) { call(function() { return root.backend.lezGetAccountBalance(account) }, cb) }
+        // File size + image type (windows.13); ui_qml cannot stat files.
+        readonly property bool inspectAvailable: !!(root.backend && typeof root.backend.inspectFile === "function")
+        function inspectFile(path, cb) { call(function() { return root.backend.inspectFile(path) }, cb) }
     }
 
     // Node status. Owns its own timers, backoff, sync debounce and progress
@@ -389,6 +405,15 @@ Rectangle {
         id: monitor
         backend: root.backend
         running: root.nodeRunning
+    }
+
+    // Folder of the user config: keystore.yaml, inscribe_key.json and
+    // lez_account.json live here. Not the chain database folder.
+    readonly property string configFolder: {
+        var p = root.backend && root.backend.userConfig ? String(root.backend.userConfig) : ""
+        if (p.indexOf("file:///") === 0) p = p.substring(8)
+        var i = Math.max(p.lastIndexOf("/"), p.lastIndexOf("\\"))
+        return i > 0 ? p.substring(0, i) : ""
     }
 
     readonly property bool nodeRunning:
@@ -585,6 +610,195 @@ Rectangle {
             )
         }
 
+        // ---- Mining control (windows.13) ----
+        function startMining() {
+            if (!root.backend)
+                return
+            _d.miningError = ""
+            resumeStore.miningWanted = true
+            logos.watch(root.backend.powStartMining(),
+                function(result) { if (!result.success) _d.miningError = _d.errorText(result.error) },
+                function(error) { _d.miningError = _d.errorText(error) })
+        }
+        function stopMining() {
+            if (!root.backend)
+                return
+            _d.miningError = ""
+            // The user's own choice: auto-resume must not turn it back on.
+            resumeStore.miningWanted = false
+            logos.watch(root.backend.powStopMining(),
+                function(result) { if (!result.success) _d.miningError = _d.errorText(result.error) },
+                function(error) { _d.miningError = _d.errorText(error) })
+        }
+
+        property string currentThreads: ""
+        property bool threadsBusy: false
+        property bool threadsOk: false
+        property string threadsMessage: ""
+        property bool restartOffered: false
+        property bool restartPending: false
+
+        function loadPowConfig() {
+            if (!root.backend || !root.backend.userConfig)
+                return
+            logos.watch(root.backend.getPowConfig(root.backend.userConfig),
+                function(result) {
+                    if (!result.success)
+                        return
+                    try {
+                        var o = typeof result.value === "string" ? JSON.parse(result.value) : result.value
+                        var mt = o ? o.max_threads : undefined
+                        if (mt === null || mt === undefined || mt === "" || mt === "null")
+                            _d.currentThreads = (o && o.max_tickets_per_block !== undefined && String(o.max_tickets_per_block).length) ? "auto" : "1"
+                        else
+                            _d.currentThreads = String(mt)
+                    } catch (e) {}
+                },
+                function(error) {})
+        }
+
+        // threads: "" = one per CPU, else a count. Live on module windows.5+,
+        // written to the config either way.
+        function applyThreads(threads) {
+            if (!root.backend)
+                return
+            _d.threadsBusy = true
+            _d.threadsMessage = ""
+            _d.restartOffered = false
+            var label = threads === "" ? qsTr("all cores") : qsTr("%n thread(s)", "", parseInt(threads))
+            var wasMining = opPage.miningActive || resumeStore.miningWanted
+            var persistOnly = function(liveError) {
+                var cfg = {}
+                cfg.max_threads = threads === "" ? null : parseInt(threads)
+                logos.watch(root.backend.powConfigure(root.backend.userConfig, JSON.stringify(cfg)),
+                    function(r) {
+                        _d.threadsBusy = false
+                        _d.threadsOk = r.success
+                        if (!r.success) {
+                            _d.threadsMessage = qsTr("Could not save: %1").arg(_d.errorText(r.error))
+                            return
+                        }
+                        _d.currentThreads = threads === "" ? "auto" : threads
+                        if (root.nodeRunning) {
+                            _d.threadsMessage = qsTr("Saved %1 to the config. This node module cannot change threads live, so it takes effect when the node restarts (mining is switched back on automatically).").arg(label)
+                            _d.restartOffered = true
+                        } else {
+                            _d.threadsMessage = qsTr("Saved %1. Used when the node starts.").arg(label)
+                        }
+                    },
+                    function(e) { _d.threadsBusy = false; _d.threadsOk = false; _d.threadsMessage = _d.errorText(e) })
+            }
+            if (!root.nodeRunning || typeof root.backend.powSetMaxThreads !== "function") {
+                persistOnly("")
+                return
+            }
+            logos.watch(root.backend.powSetMaxThreads(threads),
+                function(result) {
+                    if (!result.success) {
+                        var err = String(result.error || "")
+                        // A module without the method (windows.4 and older).
+                        if (/not running/i.test(err)) {
+                            _d.threadsBusy = false; _d.threadsOk = false
+                            _d.threadsMessage = _d.errorText(err)
+                            return
+                        }
+                        persistOnly(err)
+                        return
+                    }
+                    var v = {}
+                    try { v = typeof result.value === "string" ? JSON.parse(result.value) : (result.value || {}) } catch (e) {}
+                    _d.threadsBusy = false
+                    _d.threadsOk = true
+                    _d.currentThreads = threads === "" ? "auto" : threads
+                    _d.threadsMessage = v.persisted === false
+                        ? qsTr("Now mining with %1 (live). Could not save it to the config: %2").arg(label).arg(String(v.persist_error || ""))
+                        : qsTr("Now mining with %1 — applied live and saved to the config.").arg(label)
+                    // Re-arm: a no-op when mining is already on.
+                    if (wasMining)
+                        logos.watch(root.backend.powStartMining(), function(r) {}, function(e) {})
+                },
+                function(error) { persistOnly(String(error)) })
+        }
+
+        // ---- Settings: database reset (windows.13) ----
+        property bool resetBusy: false
+        property string resetMessage: ""
+        property bool resetOk: false
+        function resetDatabase() {
+            if (!root.backend || typeof root.backend.resetDatabase !== "function")
+                return
+            _d.resetBusy = true
+            _d.resetMessage = ""
+            logos.watch(root.backend.resetDatabase(),
+                function(r) {
+                    _d.resetBusy = false
+                    _d.resetOk = r.success
+                    if (r.success) {
+                        var v = r.value || {}
+                        _d.resetMessage = qsTr("Deleted %1 (%2 MB). Keys and config were not touched. Start the node to re-sync.")
+                            .arg(String(v.deleted || "")).arg(Math.round(Number(v.freedMb || 0)))
+                            + (v.leftover ? " " + qsTr("Could not remove the emptied folder %1; delete it by hand.").arg(String(v.leftover)) : "")
+                    } else {
+                        _d.resetMessage = String(r.error || "")
+                    }
+                },
+                function(e) { _d.resetBusy = false; _d.resetOk = false; _d.resetMessage = String(e) })
+        }
+
+        // ---- Built-in LEZ account (windows.13) ----
+        property var lez: ({ exists: false })
+        property string lezError: ""
+        property string lezBalance: ""
+        property bool lezBusy: false
+        readonly property bool lezSupported: !!root.backend && typeof root.backend.lezAccount === "function"
+        function refreshLez() {
+            if (!_d.lezSupported)
+                return
+            logos.watch(root.backend.lezAccount(),
+                function(r) {
+                    if (r.success) { _d.lez = r.value || ({ exists: false }); _d.lezError = "" }
+                    else { _d.lez = ({ exists: false }); _d.lezError = String(r.error || "") }
+                    _d.refreshLezBalance()
+                },
+                function(e) { _d.lezError = String(e) })
+        }
+        function refreshLezBalance() {
+            if (!_d.lez || !_d.lez.exists || !chainReader.lezAvailable) { _d.lezBalance = ""; return }
+            chainReader.lezBalance(_d.lez.account_id, function(ok, v) { _d.lezBalance = ok ? String(v) : "" })
+        }
+        function createLez() {
+            if (!_d.lezSupported)
+                return
+            _d.lezBusy = true
+            logos.watch(root.backend.lezCreateAccount(),
+                function(r) {
+                    _d.lezBusy = false
+                    if (r.success) { _d.lez = r.value || ({ exists: false }); _d.lezError = ""; _d.refreshLezBalance() }
+                    else _d.lezError = String(r.error || "")
+                },
+                function(e) { _d.lezBusy = false; _d.lezError = String(e) })
+        }
+        function backupLez(dest) {
+            logos.watch(root.backend.backupLezAccount(dest),
+                function(r) {
+                    if (r.success) { keystoreBackupToast.show(qsTr("LEZ account key saved"), r.value); _d.refreshLez() }
+                    else _d.lezError = String(r.error || "")
+                },
+                function(e) { _d.lezError = String(e) })
+        }
+
+        // Stop and start the same node with the same config, keeping the
+        // user's intent so mining comes back once synced.
+        function restartNode() {
+            if (!root.backend || !root.nodeRunning)
+                return
+            _d.restartOffered = false
+            _d.restartPending = true
+            _d.threadsOk = true
+            _d.threadsMessage = qsTr("Restarting the node…")
+            root.backend.stopBlockchain()
+        }
+
         // An empty address lets the node pay whichever target is furthest below
         // its threshold, which is the same choice auto-claim makes.
         function claimPowRewards(addressHex) {
@@ -764,41 +978,31 @@ Rectangle {
                 // is what PoS stakes from — so this is how a fresh node funds
                 // itself. Secondary next to the node control: starting the node
                 // is still the primary action on this header.
+                // Two explicit buttons rather than one toggle: Start is offered
+                // only when it can work (node up and caught up), Stop whenever
+                // mining is on, so the CPU can always be given back.
                 LogosButton {
                     id: fundMiningButton
                     objectName: "fundMiningButton"
-                    text: opPage.miningActive ? qsTr("Stop Mining") : qsTr("Fund")
-                    // Mining against a chain we haven't caught up with burns CPU
-                    // for nothing: a ticket is anchored to a recent block hash
-                    // and expires outside the acceptance window. Stopping stays
-                    // available either way — a node that falls behind while
-                    // mining must not trap the user with the CPU still pinned.
-                    enabled: opPage.nodeRunning && (opPage.miningActive || monitor.synced)
-                    // The one thing the button cannot say for itself. The
-                    // prototype assumed mining stopped at a funding target; this
-                    // build has no target and does not stop. What that costs is
-                    // spelled out on the Mining tab rather than crammed in here.
+                    text: qsTr("Start Mining")
+                    visible: !opPage.miningActive
+                    enabled: opPage.nodeRunning && monitor.synced
                     LogosToolTip {
-                        text: qsTr("Mining runs until you stop it")
+                        text: opPage.nodeRunning && !monitor.synced
+                              ? qsTr("Available once the node has caught up")
+                              : qsTr("Mining runs until you stop it")
                         placement: LogosToolTip.Placement.Bottom
                         visible: fundMiningButton.hovered
                     }
-                    onClicked: {
-                        if (!root.backend)
-                            return
-                        _d.miningError = ""
-                        // The user's own choice is the intent auto-resume follows.
-                        resumeStore.miningWanted = !opPage.miningActive
-                        logos.watch(
-                            opPage.miningActive ? root.backend.powStopMining()
-                                          : root.backend.powStartMining(),
-                            function(result) {
-                                if (!result.success)
-                                    _d.miningError = _d.errorText(result.error)
-                            },
-                            function(error) { _d.miningError = _d.errorText(error) }
-                        )
-                    }
+                    onClicked: _d.startMining()
+                }
+                LogosButton {
+                    id: stopMiningButton
+                    objectName: "stopMiningHeaderButton"
+                    text: qsTr("Stop Mining")
+                    visible: opPage.miningActive
+                    enabled: opPage.nodeRunning
+                    onClicked: _d.stopMining()
                 }
 
                 LogosButton {
@@ -1050,8 +1254,16 @@ Rectangle {
                     accountRows: root.backend ? root.backend.accountRows : []
                     nodeRunning: opPage.nodeRunning
                     lezChannelId: root.backend ? root.backend.lezChannelId : ""
-                    nodeDataDir: root.backend ? root.backend.nodeDataDir : ""
+                    // The key folder (config folder), not the chain db.
+                    nodeDataDir: root.configFolder
                     chain: chainReader
+                    lezSupported: _d.lezSupported
+                    lezAccount: _d.lez
+                    lezBalance: _d.lezBalance
+                    lezError: _d.lezError
+                    lezBusy: _d.lezBusy
+                    onLezCreateRequested: _d.createLez()
+                    onLezRefreshRequested: _d.refreshLez()
 
                     onRefreshAccountsRequested: if (root.backend) root.backend.refreshAccounts()
 
@@ -1268,6 +1480,20 @@ Rectangle {
                     claimSuccess: _d.claimSuccess
                     claimMessage: _d.claimMessage
 
+                    synced: monitor.synced
+                    cpuCount: root.backend ? root.backend.cpuCount : 1
+                    currentThreads: _d.currentThreads
+                    threadsBusy: _d.threadsBusy
+                    threadsOk: _d.threadsOk
+                    threadsMessage: _d.threadsMessage
+                    restartOffered: _d.restartOffered
+                    miningError: _d.miningError
+                    onStartMiningRequested: _d.startMining()
+                    onStopMiningRequested: _d.stopMining()
+                    onApplyThreadsRequested: function(threads) { _d.applyThreads(threads) }
+                    onRestartNodeRequested: _d.restartNode()
+                    Component.onCompleted: _d.loadPowConfig()
+
                     onClaimRequested: function(addressHex) { _d.claimPowRewards(addressHex) }
                     onAutoClaimToggled: function(enabled) { _d.setAutoClaim(enabled) }
                     onHistoryPendingOnlyChanged: function(pendingOnly) {
@@ -1332,6 +1558,15 @@ Rectangle {
                             return
                         root.backend.deploymentConfig = path
                     }
+                    configDir: root.configFolder
+                    resetBusy: _d.resetBusy
+                    resetMessage: _d.resetMessage
+                    resetOk: _d.resetOk
+                    onResetDatabaseRequested: _d.resetDatabase()
+                    lezAccountExists: !!_d.lez && _d.lez.exists === true
+                    lezAccountPath: (_d.lez && _d.lez.path) ? _d.lez.path : ""
+                    lezBackedUp: !!_d.lez && _d.lez.backed_up === true
+                    onBackupLezAccountRequested: function(dest) { _d.backupLez(dest) }
                     onStartNewNodeRequested: root.openSetup(true)
                     autoResume: resumeStore.enabled
                     onAutoResumeToggled: function(on) { resumeStore.enabled = on }

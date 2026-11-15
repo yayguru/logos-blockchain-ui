@@ -20,6 +20,13 @@ ColumnLayout {
     // A LogosNotice.Severity for the banner above.
     property int nodeOffSeverity: LogosNotice.Info
 
+    property bool lezSupported: false
+    property var lezAccount: ({ exists: false })
+    property string lezBalance: ""
+    property string lezError: ""
+    property bool lezBusy: false
+    signal lezCreateRequested()
+    signal lezRefreshRequested()
     signal refreshAccountsRequested()
     signal copyToClipboard(string text)
 
@@ -57,6 +64,17 @@ ColumnLayout {
         Layout.fillWidth: true
         Layout.minimumWidth: 0
         visible: balanceListView.count === 0 && root.nodeOffReason.length === 0
+    }
+
+    LezAccountCard {
+        supported: root.lezSupported
+        account: root.lezAccount
+        balance: root.lezBalance
+        error: root.lezError
+        busy: root.lezBusy
+        onCreateRequested: root.lezCreateRequested()
+        onRefreshRequested: root.lezRefreshRequested()
+        onCopyToClipboard: (text) => root.copyToClipboard(text)
     }
 
     LogosListView {

@@ -95,7 +95,36 @@ ColumnLayout {
         property string estimatedFee: ""
         property string signer: ""
         property string txHash: ""
-        property int mode: 0 // 0 text, 1 file
+        property int mode: 0 // 0 text, 1 file, 2 image
+        // Image mode: what the picked file is, checked before any estimate.
+        property string imagePath: ""
+        property string imageKind: ""
+        property real imageSize: -1
+        property string imageError: ""
+        readonly property int imageMaxBytes: 512 * 1024
+        function pickImage(path) {
+            imagePath = path
+            imageKind = ""
+            imageSize = -1
+            imageError = ""
+            estimatedFee = ""
+            if (!root.chain || !root.chain.inspectAvailable) {
+                imageError = qsTr("This backend cannot check image files; update the app.")
+                return
+            }
+            root.chain.inspectFile(path, function(ok, v) {
+                if (!ok) { imageError = String(v); return }
+                imageKind = String(v.kind || "")
+                imageSize = Number(v.size || 0)
+                if (["png", "jpeg", "gif", "webp"].indexOf(imageKind) < 0)
+                    imageError = qsTr("Not a PNG, JPEG, GIF or WebP image.")
+                else if (imageSize > imageMaxBytes)
+                    imageError = qsTr("The image is %1 KB; the limit is %2 KB. Make it smaller (fees grow with size).")
+                                     .arg(Math.ceil(imageSize / 1024)).arg(imageMaxBytes / 1024)
+                else if (imageSize <= 0)
+                    imageError = qsTr("The image file is empty.")
+            })
+        }
         property bool autoIdent: false
         property bool autoIdentDone: false
 
@@ -158,6 +187,8 @@ ColumnLayout {
                 req.parent_msg_id = parent
             if (d.mode === 1) {
                 req.payload_path = filePathField.text.trim()
+            } else if (d.mode === 2) {
+                req.payload_path = d.imagePath
             } else {
                 var utf8 = unescape(encodeURIComponent(textArea.text))
                 var hex = ""
@@ -173,6 +204,10 @@ ColumnLayout {
                 return qsTr("Choose or generate a channel key file first.")
             if (d.mode === 1 && !filePathField.text.trim().length)
                 return qsTr("Choose a file to inscribe.")
+            if (d.mode === 2 && !d.imagePath.length)
+                return qsTr("Choose an image to inscribe.")
+            if (d.mode === 2 && (d.imageError.length || d.imageSize < 0))
+                return d.imageError.length ? d.imageError : qsTr("Checking the image…")
             if (d.mode === 0 && !textArea.text.trim().length)
                 return qsTr("Type some text to inscribe.")
             if (!fundingKey().length)
@@ -260,6 +295,12 @@ ColumnLayout {
                     variant: d.mode === 1 ? LogosButton.Variant.Primary : LogosButton.Variant.Secondary
                     onClicked: d.mode = 1
                 }
+                LogosButton {
+                    objectName: "inscribeImageModeButton"
+                    text: qsTr("Image")
+                    variant: d.mode === 2 ? LogosButton.Variant.Primary : LogosButton.Variant.Secondary
+                    onClicked: { d.mode = 2; d.estimatedFee = "" }
+                }
             }
 
             LogosTextArea {
@@ -286,6 +327,80 @@ ColumnLayout {
                 }
             }
 
+            // ---- Image mode ----
+            ColumnLayout {
+                Layout.fillWidth: true
+                visible: d.mode === 2
+                spacing: Theme.spacing.small
+                RowLayout {
+                    Layout.fillWidth: true
+                    LogosTextField {
+                        objectName: "imagePathField"
+                        Layout.fillWidth: true
+                        placeholderText: qsTr("PNG, JPEG, GIF or WebP, up to %1 KB").arg(d.imageMaxBytes / 1024)
+                        readOnly: true
+                        text: d.imagePath
+                    }
+                    LogosButton {
+                        objectName: "imageBrowseButton"
+                        text: qsTr("Choose image")
+                        onClicked: imageDialog.open()
+                    }
+                }
+                Image {
+                    id: imagePreview
+                    objectName: "imagePreview"
+                    visible: d.imagePath.length > 0 && d.imageError.length === 0 && status !== Image.Error
+                    Layout.preferredHeight: visible ? Math.min(220, Math.max(48, implicitHeight)) : 0
+                    Layout.preferredWidth: visible ? Math.min(360, implicitWidth) : 0
+                    fillMode: Image.PreserveAspectFit
+                    asynchronous: true
+                    cache: false
+                    sourceSize.width: 720
+                    source: d.imagePath.length ? (d.imagePath.indexOf("/") === 0 ? "file://" : "file:///") + d.imagePath : ""
+                }
+                LogosText {
+                    visible: d.imagePath.length > 0 && d.imageError.length === 0 && d.imageSize >= 0
+                    text: qsTr("%1 · %2 KB%3").arg(d.imageKind.toUpperCase()).arg((d.imageSize / 1024).toFixed(1))
+                              .arg(imagePreview.status === Image.Ready
+                                   ? qsTr(" · %1×%2 px").arg(imagePreview.implicitWidth).arg(imagePreview.implicitHeight)
+                                   : (imagePreview.status === Image.Error ? qsTr(" · no preview for this format here") : ""))
+                    font.pixelSize: Theme.typography.secondaryText
+                    color: Theme.palette.textSecondary
+                }
+                LogosText {
+                    objectName: "imageErrorText"
+                    Layout.fillWidth: true
+                    visible: d.imageError.length > 0
+                    wrapMode: Text.WordWrap
+                    text: d.imageError
+                    color: Theme.palette.error
+                    font.pixelSize: Theme.typography.secondaryText
+                }
+                LogosText {
+                    Layout.fillWidth: true
+                    wrapMode: Text.WordWrap
+                    text: qsTr("The image's raw bytes go on chain as they are (metadata included), and anyone can read them back. Fees grow with size.")
+                    color: Theme.palette.textTertiary
+                    font.pixelSize: Theme.typography.secondaryText
+                }
+            }
+
+            FileDialog {
+                id: imageDialog
+                title: qsTr("Select an image to inscribe")
+                fileMode: FileDialog.OpenFile
+                nameFilters: [qsTr("Images (*.png *.jpg *.jpeg *.gif *.webp)")]
+                onAccepted: {
+                    var u = selectedFile.toString()
+                    if (u.indexOf("file://") === 0)
+                        u = u.substring(7)
+                    if (u.indexOf("/") === 0 && u.length > 2 && u[2] === ":")
+                        u = u.substring(1)
+                    d.pickImage(decodeURIComponent(u))
+                }
+            }
+
             FileDialog {
                 id: fileDialog
                 title: qsTr("Select a file to inscribe")
@@ -297,7 +412,7 @@ ColumnLayout {
                     // Windows file:///C:/...
                     if (u.indexOf("/") === 0 && u.length > 2 && u[2] === ":")
                         u = u.substring(1)
-                    filePathField.text = u
+                    filePathField.text = decodeURIComponent(u)
                 }
             }
 

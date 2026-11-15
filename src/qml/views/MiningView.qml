@@ -73,6 +73,22 @@ ColumnLayout {
     // A LogosNotice.Severity for the banner above.
     property int nodeOffSeverity: LogosNotice.Info
 
+    // ---- Mining control (windows.13) ----
+    property bool synced: false
+    property int cpuCount: 1
+    // "" not read yet, "auto" one thread per CPU, or a count.
+    property string currentThreads: ""
+    property bool threadsBusy: false
+    property bool threadsOk: false
+    property string threadsMessage: ""
+    property bool restartOffered: false
+    property string miningError: ""
+    signal startMiningRequested()
+    signal stopMiningRequested()
+    // "" = one thread per CPU.
+    signal applyThreadsRequested(string threads)
+    signal restartNodeRequested()
+
     signal historyPendingOnlyChanged(bool pendingOnly)
     signal openInExplorerRequested(string id)
 
@@ -154,6 +170,167 @@ ColumnLayout {
     NodeOffNotice {
         reason: root.nodeOffReason
         reasonSeverity: root.nodeOffSeverity
+    }
+
+    // ---- Mining control: state, Start / Stop, threads ----
+    LogosFrame {
+        Layout.fillWidth: true
+        objectName: "miningControlCard"
+        padding: Theme.spacing.medium
+        backgroundColor: Theme.palette.surfaceRaised
+        borderColor: "transparent"
+        radius: Theme.spacing.radiusLarge
+
+        contentItem: ColumnLayout {
+            spacing: Theme.spacing.small
+
+            RowLayout {
+                Layout.fillWidth: true
+                spacing: Theme.spacing.small
+
+                LogosText {
+                    text: qsTr("Mining")
+                    font.pixelSize: Theme.typography.subtitleText
+                    font.weight: Theme.typography.weightMedium
+                }
+                LogosBadge {
+                    objectName: "miningStateBadge"
+                    text: !root.nodeRunning ? qsTr("Node off")
+                          : root.miningActive ? qsTr("Mining") : qsTr("Stopped")
+                    color: root.miningActive ? Theme.palette.success : Theme.palette.textTertiary
+                }
+                Item { Layout.fillWidth: true }
+                LogosButton {
+                    objectName: "startMiningButton"
+                    text: qsTr("Start mining")
+                    variant: LogosButton.Variant.Primary
+                    enabled: root.nodeRunning && !root.miningActive && root.synced
+                    onClicked: root.startMiningRequested()
+                }
+                LogosButton {
+                    objectName: "stopMiningButton"
+                    text: qsTr("Stop mining")
+                    enabled: root.nodeRunning && root.miningActive
+                    onClicked: root.stopMiningRequested()
+                }
+            }
+
+            LogosText {
+                Layout.fillWidth: true
+                wrapMode: Text.WordWrap
+                visible: root.nodeRunning && !root.miningActive && !root.synced
+                text: qsTr("Start mining becomes available once the node has caught up with the chain.")
+                font.pixelSize: Theme.typography.secondaryText
+                color: Theme.palette.textTertiary
+            }
+            LogosText {
+                Layout.fillWidth: true
+                wrapMode: Text.WordWrap
+                visible: root.miningError.length > 0
+                text: root.miningError
+                font.pixelSize: Theme.typography.secondaryText
+                color: Theme.palette.error
+            }
+
+            RowLayout {
+                Layout.fillWidth: true
+                Layout.topMargin: Theme.spacing.small
+                spacing: Theme.spacing.small
+
+                LogosText {
+                    text: qsTr("CPU threads")
+                    font.pixelSize: Theme.typography.secondaryText
+                    color: Theme.palette.text
+                }
+                LogosText {
+                    objectName: "currentThreadsText"
+                    text: root.currentThreads === "" ? ""
+                          : root.currentThreads === "auto"
+                            ? qsTr("now: all %1").arg(root.cpuCount)
+                            : qsTr("now: %1 of %2").arg(root.currentThreads).arg(root.cpuCount)
+                    font.pixelSize: Theme.typography.secondaryText
+                    color: Theme.palette.textTertiary
+                }
+                Item { Layout.fillWidth: true }
+                LogosText {
+                    text: qsTr("All cores")
+                    font.pixelSize: Theme.typography.secondaryText
+                    color: Theme.palette.textSecondary
+                }
+                LogosSwitch {
+                    id: allCoresSwitch
+                    objectName: "allCoresSwitch"
+                    checked: root.currentThreads === "auto"
+                }
+                LogosButton {
+                    objectName: "threadsMinusButton"
+                    text: "−"
+                    visible: !allCoresSwitch.checked
+                    enabled: threadsDial.value > 1
+                    onClicked: threadsDial.value = Math.max(1, threadsDial.value - 1)
+                }
+                LogosText {
+                    id: threadsDial
+                    objectName: "threadsValue"
+                    property int value: 1
+                    visible: !allCoresSwitch.checked
+                    text: String(value)
+                    Layout.preferredWidth: 28
+                    horizontalAlignment: Text.AlignHCenter
+                    font.weight: Theme.typography.weightMedium
+                    Connections {
+                        target: root
+                        function onCurrentThreadsChanged() {
+                            var n = parseInt(root.currentThreads)
+                            if (!isNaN(n) && n > 0) threadsDial.value = n
+                            allCoresSwitch.checked = root.currentThreads === "auto"
+                        }
+                    }
+                }
+                LogosButton {
+                    objectName: "threadsPlusButton"
+                    text: "+"
+                    visible: !allCoresSwitch.checked
+                    enabled: threadsDial.value < Math.max(1, root.cpuCount)
+                    onClicked: threadsDial.value = Math.min(Math.max(1, root.cpuCount), threadsDial.value + 1)
+                }
+                LogosButton {
+                    objectName: "applyThreadsButton"
+                    text: root.threadsBusy ? qsTr("Applying…") : qsTr("Apply")
+                    enabled: !root.threadsBusy
+                    onClicked: root.applyThreadsRequested(allCoresSwitch.checked ? "" : String(threadsDial.value))
+                }
+            }
+
+            LogosText {
+                Layout.fillWidth: true
+                wrapMode: Text.WordWrap
+                text: qsTr("More threads find tickets faster but leave less CPU for everything else. "
+                           + "The change applies to the running node at once and is saved to the config.")
+                font.pixelSize: Theme.typography.secondaryText
+                color: Theme.palette.textTertiary
+            }
+
+            RowLayout {
+                Layout.fillWidth: true
+                visible: root.threadsMessage.length > 0
+                spacing: Theme.spacing.small
+                LogosText {
+                    objectName: "threadsMessage"
+                    Layout.fillWidth: true
+                    wrapMode: Text.WordWrap
+                    text: root.threadsMessage
+                    font.pixelSize: Theme.typography.secondaryText
+                    color: root.threadsOk ? Theme.palette.success : Theme.palette.error
+                }
+                LogosButton {
+                    objectName: "restartToApplyButton"
+                    visible: root.restartOffered
+                    text: qsTr("Restart node now")
+                    onClicked: root.restartNodeRequested()
+                }
+            }
+        }
     }
 
     // ---- Header ----

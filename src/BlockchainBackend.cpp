@@ -3795,3 +3795,261 @@ void BlockchainBackend::copyToClipboard(QString text)
     if (QClipboard* clipboard = QGuiApplication::clipboard())
         clipboard->setText(text);
 }
+
+// ============================================================================
+// windows.13: live mining threads, file inspection, safe database reset, and a
+// built-in LEZ public account.
+// ============================================================================
+
+#include "LezKeys.h"
+#include <QRandomGenerator>
+#include <cstring>
+#include <QSaveFile>
+
+QString BlockchainBackend::configDir() const
+{
+    const QString cfg = userConfig().trimmed();
+    if (cfg.isEmpty())
+        return {};
+    const QString local = toLocalPath(cfg);
+    return QFileInfo(local.isEmpty() ? cfg : local).absolutePath();
+}
+
+QVariantMap BlockchainBackend::powSetMaxThreads(QString maxThreads)
+{
+    if (!m_blockchainClient)
+        return result::toVariantMap(result::err(QStringLiteral("Module not initialized.")));
+    if (status() != Running)
+        return result::toVariantMap(result::err(QStringLiteral("The node is not running.")));
+    return invokeJsonMethod(QStringLiteral("pow_set_max_threads"), QVariantList{maxThreads.trimmed()});
+}
+
+QVariantMap BlockchainBackend::inspectFile(QString path)
+{
+    const QString local = toLocalPath(path.trimmed());
+    const QFileInfo fi(local.isEmpty() ? path.trimmed() : local);
+    if (!fi.exists() || !fi.isFile())
+        return result::toVariantMap(result::err(QStringLiteral("File not found.")));
+    QFile f(fi.absoluteFilePath());
+    if (!f.open(QIODevice::ReadOnly))
+        return result::toVariantMap(result::err(QStringLiteral("Cannot read the file.")));
+    const QByteArray head = f.read(16);
+    QString kind = QStringLiteral("other");
+    if (head.startsWith("\x89PNG\r\n\x1a\n"))
+        kind = QStringLiteral("png");
+    else if (head.startsWith("\xff\xd8\xff"))
+        kind = QStringLiteral("jpeg");
+    else if (head.startsWith("GIF87a") || head.startsWith("GIF89a"))
+        kind = QStringLiteral("gif");
+    else if (head.size() >= 12 && head.startsWith("RIFF") && head.mid(8, 4) == "WEBP")
+        kind = QStringLiteral("webp");
+    else if (head.startsWith("BM"))
+        kind = QStringLiteral("bmp");
+    QVariantMap out;
+    out.insert(QStringLiteral("size"), fi.size());
+    out.insert(QStringLiteral("kind"), kind);
+    out.insert(QStringLiteral("path"), QDir::toNativeSeparators(fi.absoluteFilePath()));
+    return result::toVariantMap(LogosResult{true, out, QVariant()});
+}
+
+namespace {
+bool isRocksDbFileName(const QString& name)
+{
+    static const QRegularExpression re(QStringLiteral(
+        "^(CURRENT|IDENTITY|LOCK|LOG|LOG\\.old\\.\\d+|MANIFEST-\\d+|OPTIONS-\\d+(\\.dbtmp)?"
+        "|\\d+\\.(sst|log|blob|ldb|dbtmp)|CURRENT\\.dbtmp|\\d+\\.dbtmp)$"));
+    return re.match(name).hasMatch();
+}
+} // namespace
+
+QVariantMap BlockchainBackend::resetDatabase()
+{
+    const auto fail = [](const QString& m) { return result::toVariantMap(result::err(m)); };
+    const int st = status();
+    if (st != NotStarted && st != Stopped && st != Error)
+        return fail(QStringLiteral("Stop the node first."));
+
+    const QString db = nodeDatabaseDir();
+    if (db.isEmpty())
+        return fail(QStringLiteral("No chain database was found for this config, so there is nothing to reset."));
+    const QFileInfo dbInfo(db);
+    if (!dbInfo.isDir() || dbInfo.fileName() != QLatin1String("db"))
+        return fail(QStringLiteral("%1 is not the node's db folder; nothing was deleted.").arg(db));
+
+    const QString dbCanon = dbInfo.canonicalFilePath();
+    const QString cfgDir = QFileInfo(configDir()).canonicalFilePath();
+    const QString keystore = nodeKeystorePath();
+    if (dbCanon.isEmpty())
+        return fail(QStringLiteral("Cannot resolve %1; nothing was deleted.").arg(db));
+    const auto inside = [](const QString& child, const QString& parent) {
+        return !child.isEmpty() && !parent.isEmpty()
+            && (child.compare(parent, Qt::CaseInsensitive) == 0
+                || child.startsWith(parent + QLatin1Char('/'), Qt::CaseInsensitive));
+    };
+    // The db must sit strictly below the config folder's tree or beside it,
+    // never be it or contain it, and never contain the keystore.
+    if (inside(cfgDir, dbCanon))
+        return fail(QStringLiteral("The database path is the config folder (or holds it); nothing was deleted."));
+    if (!keystore.isEmpty() && inside(QFileInfo(keystore).canonicalFilePath(), dbCanon))
+        return fail(QStringLiteral("The keystore is inside the database folder; nothing was deleted. Move keystore.yaml out first."));
+
+    // Every entry must be a RocksDB file. Anything else (a key, a config, a
+    // folder) means this is not purely a chain database: refuse, and say what.
+    QDir dir(dbCanon);
+    const QFileInfoList entries = dir.entryInfoList(QDir::AllEntries | QDir::Hidden | QDir::System | QDir::NoDotAndDotDot);
+    bool hasCurrent = false;
+    QStringList foreign;
+    for (const QFileInfo& e : entries) {
+        if (e.isDir() || e.isSymLink() || !isRocksDbFileName(e.fileName()))
+            foreign << e.fileName();
+        if (e.fileName() == QLatin1String("CURRENT"))
+            hasCurrent = true;
+    }
+    if (!foreign.isEmpty())
+        return fail(QStringLiteral("%1 holds files that are not chain-database files (%2); nothing was deleted.")
+                        .arg(db, foreign.mid(0, 5).join(QStringLiteral(", "))));
+    if (!hasCurrent)
+        return fail(QStringLiteral("%1 does not look like a chain database (no CURRENT file); nothing was deleted.").arg(db));
+
+    // Rename first: atomic, and it fails while a running node still holds the
+    // database open, so a live node can never lose its files mid-flight.
+    const QString aside = dbCanon + QStringLiteral(".reset-")
+        + QDateTime::currentDateTime().toString(QStringLiteral("yyyyMMdd-HHmmss"));
+    if (!QDir().rename(dbCanon, aside))
+        return fail(QStringLiteral("Could not move %1 aside — is the node still running? Nothing was deleted.").arg(db));
+
+    QDir asideDir(aside);
+    qint64 freed = 0;
+    for (const QFileInfo& e : asideDir.entryInfoList(QDir::Files | QDir::Hidden | QDir::System | QDir::NoDotAndDotDot)) {
+        freed += e.size();
+        QFile::remove(e.absoluteFilePath());
+    }
+    const bool removed = asideDir.rmdir(aside);
+    setNodeDataDir(nodeDatabaseDir());
+    m_diskSampled.invalidate();
+    refreshDiskUsage();
+
+    QVariantMap out;
+    out.insert(QStringLiteral("deleted"), QDir::toNativeSeparators(db));
+    out.insert(QStringLiteral("freedMb"), static_cast<double>(freed) / (1024.0 * 1024.0));
+    if (!removed)
+        out.insert(QStringLiteral("leftover"), QDir::toNativeSeparators(aside));
+    return result::toVariantMap(LogosResult{true, out, QVariant()});
+}
+
+namespace {
+QString lezAccountFileIn(const QString& dir)
+{
+    return dir.isEmpty() ? QString() : QDir(dir).filePath(QStringLiteral("lez_account.json"));
+}
+} // namespace
+
+// Beside the keystore when there is one, else beside the config.
+static QString lezBaseDir(const QString& keystorePath, const QString& configDir)
+{
+    if (!keystorePath.isEmpty())
+        return QFileInfo(keystorePath).absolutePath();
+    return configDir;
+}
+
+QVariantMap BlockchainBackend::lezAccount()
+{
+    const QString dir = lezBaseDir(nodeKeystorePath(), configDir());
+    QVariantMap out;
+    out.insert(QStringLiteral("dir"), QDir::toNativeSeparators(dir));
+    out.insert(QStringLiteral("exists"), false);
+    if (dir.isEmpty())
+        return result::toVariantMap(LogosResult{true, out, QVariant()});
+    const QString path = lezAccountFileIn(dir);
+    out.insert(QStringLiteral("path"), QDir::toNativeSeparators(path));
+    QFile f(path);
+    if (!f.exists())
+        return result::toVariantMap(LogosResult{true, out, QVariant()});
+    if (!f.open(QIODevice::ReadOnly))
+        return result::toVariantMap(result::err(QStringLiteral("Cannot read %1.").arg(path)));
+    const QJsonObject o = QJsonDocument::fromJson(f.readAll()).object();
+    f.close();
+    const QByteArray secret = QByteArray::fromHex(o.value(QStringLiteral("private_key")).toString().toLatin1());
+    if (secret.size() != 32)
+        return result::toVariantMap(result::err(QStringLiteral("%1 is damaged (no valid key).").arg(path)));
+    lezkeys::Bytes32 sk{};
+    std::memcpy(sk.data(), secret.constData(), 32);
+    if (!lezkeys::isValidSecret(sk))
+        return result::toVariantMap(result::err(QStringLiteral("%1 is damaged (invalid key).").arg(path)));
+    const lezkeys::Bytes32 pk = lezkeys::xOnlyPublicKey(sk);
+    const lezkeys::Bytes32 id = lezkeys::accountIdFromPublicKey(pk);
+    sk.fill(0);
+    const QString accountId = QString::fromStdString(lezkeys::base58(id.data(), id.size()));
+    if (o.value(QStringLiteral("account_id")).toString() != accountId)
+        return result::toVariantMap(result::err(QStringLiteral("%1 is inconsistent (account id does not match its key).").arg(path)));
+    out.insert(QStringLiteral("exists"), true);
+    out.insert(QStringLiteral("account_id"), accountId);
+    out.insert(QStringLiteral("public_key"), QString::fromStdString(lezkeys::hex(pk.data(), pk.size())));
+    out.insert(QStringLiteral("created"), o.value(QStringLiteral("created")).toString());
+    out.insert(QStringLiteral("backed_up"), appSettings()->value(QStringLiteral("lezAccountBackedUp"), false).toBool());
+    return result::toVariantMap(LogosResult{true, out, QVariant()});
+}
+
+QVariantMap BlockchainBackend::lezCreateAccount()
+{
+    const QString dir = lezBaseDir(nodeKeystorePath(), configDir());
+    if (dir.isEmpty() || !QFileInfo(dir).isDir())
+        return result::toVariantMap(result::err(QStringLiteral("Set up the node config first; the LEZ account is kept beside its keystore.")));
+    const QString path = lezAccountFileIn(dir);
+    if (QFile::exists(path))
+        return lezAccount(); // never overwrite an existing account
+
+    lezkeys::Bytes32 sk{};
+    do {
+        quint32 words[8];
+        QRandomGenerator::system()->fillRange(words, 8);
+        std::memcpy(sk.data(), words, 32);
+        std::memset(words, 0, sizeof words);
+    } while (!lezkeys::isValidSecret(sk));
+    const lezkeys::Bytes32 pk = lezkeys::xOnlyPublicKey(sk);
+    const lezkeys::Bytes32 id = lezkeys::accountIdFromPublicKey(pk);
+
+    QJsonObject o;
+    o.insert(QStringLiteral("format"), QStringLiteral("lez-public-account-v1"));
+    o.insert(QStringLiteral("network"), QStringLiteral("LEZ testnet"));
+    o.insert(QStringLiteral("account_id"), QString::fromStdString(lezkeys::base58(id.data(), id.size())));
+    o.insert(QStringLiteral("public_key"), QString::fromStdString(lezkeys::hex(pk.data(), pk.size())));
+    std::string skHex = lezkeys::hex(sk.data(), sk.size());
+    o.insert(QStringLiteral("private_key"), QString::fromStdString(skHex));
+    std::fill(skHex.begin(), skHex.end(), '0');
+    sk.fill(0);
+    o.insert(QStringLiteral("created"), QDateTime::currentDateTimeUtc().toString(Qt::ISODate));
+    o.insert(QStringLiteral("note"), QStringLiteral(
+        "Secret key of a LEZ public account. Keep it private and back it up. "
+        "Import into the LEZ wallet with: wallet account import public --private-key <private_key>"));
+
+    QSaveFile f(path);
+    if (!f.open(QIODevice::WriteOnly))
+        return result::toVariantMap(result::err(QStringLiteral("Cannot write %1.").arg(path)));
+    f.write(QJsonDocument(o).toJson(QJsonDocument::Indented));
+    if (!f.commit())
+        return result::toVariantMap(result::err(QStringLiteral("Cannot write %1.").arg(path)));
+    QFile::setPermissions(path, QFileDevice::ReadOwner | QFileDevice::WriteOwner);
+    // A new secret nobody has a copy of yet.
+    appSettings()->setValue(QStringLiteral("lezAccountBackedUp"), false);
+    return lezAccount();
+}
+
+QVariantMap BlockchainBackend::backupLezAccount(QString destinationPath)
+{
+    const QString dir = lezBaseDir(nodeKeystorePath(), configDir());
+    const QString source = lezAccountFileIn(dir);
+    if (source.isEmpty() || !QFile::exists(source))
+        return result::toVariantMap(result::err(QStringLiteral("There is no LEZ account to back up yet.")));
+    const QString target = toLocalPath(destinationPath.trimmed());
+    if (target.isEmpty())
+        return result::toVariantMap(result::err(QStringLiteral("No destination was given.")));
+    if (QFileInfo(target).absoluteFilePath().compare(QFileInfo(source).absoluteFilePath(), Qt::CaseInsensitive) == 0)
+        return result::toVariantMap(result::err(QStringLiteral("Pick a different place than the original.")));
+    if (QFile::exists(target) && !QFile::remove(target))
+        return result::toVariantMap(result::err(QStringLiteral("Could not replace %1.").arg(target)));
+    if (!QFile::copy(source, target))
+        return result::toVariantMap(result::err(QStringLiteral("Could not write %1.").arg(target)));
+    appSettings()->setValue(QStringLiteral("lezAccountBackedUp"), true);
+    return result::toVariantMap(LogosResult{true, target, QVariant()});
+}

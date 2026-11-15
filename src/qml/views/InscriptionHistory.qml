@@ -26,7 +26,7 @@ LogosFrame {
     readonly property int count: items.count
     readonly property string statusText: d.status
     readonly property bool busy: d.busy
-    function itemText(i) { var r = items.get(i); return r ? (r.slot + " " + r.tx.slice(0, 8) + " " + r.text) : "" }
+    function itemText(i) { var r = items.get(i); return r ? (r.slot + " " + r.tx.slice(0, 8) + " " + (r.image.length ? "[" + r.kind + " image " + r.size + " B]" : r.text)) : "" }
 
     Layout.fillWidth: true
     padding: Theme.spacing.medium
@@ -78,10 +78,13 @@ LogosFrame {
                         if (seen.indexOf("|" + key + "|") >= 0) continue
                         seen += key + "|"
                         var dec = ChainRead.hexToText(op.payload.inscription)
+                        var img = ChainRead.imageDataUrl(op.payload.inscription)
                         var row = {
                             slot: slot,
                             tx: String(mt.hash || ""),
-                            text: dec.printable ? dec.text : "",
+                            image: img,
+                            kind: ChainRead.imageKind(op.payload.inscription),
+                            text: (dec.printable && !img.length) ? dec.text : "",
                             size: dec.size,
                             hex: String(op.payload.inscription || "").slice(0, 96)
                         }
@@ -173,8 +176,29 @@ LogosFrame {
                 required property string text
                 required property int size
                 required property string hex
+                required property string image
+                required property string kind
                 Layout.fillWidth: true
                 spacing: Theme.spacing.tiny
+                Image {
+                    objectName: "inscriptionImage"
+                    visible: row.image.length > 0
+                    Layout.maximumWidth: Math.min(360, row.width)
+                    Layout.preferredHeight: visible ? Math.min(240, Math.max(32, implicitHeight)) : 0
+                    Layout.preferredWidth: visible ? Math.min(360, implicitWidth) : 0
+                    fillMode: Image.PreserveAspectFit
+                    asynchronous: true
+                    cache: false
+                    sourceSize.width: 720
+                    source: row.image
+                    Accessible.name: qsTr("Image inscription at slot %1").arg(String(row.slot))
+                }
+                LogosText {
+                    visible: row.image.length > 0
+                    text: qsTr("%1 image · %2 bytes").arg(row.kind.toUpperCase()).arg(row.size)
+                    font.pixelSize: Theme.typography.secondaryText
+                    color: Theme.palette.textSecondary
+                }
                 LogosText {
                     Layout.fillWidth: true
                     visible: row.text.length > 0
@@ -184,7 +208,7 @@ LogosFrame {
                 }
                 LogosText {
                     Layout.fillWidth: true
-                    visible: row.text.length === 0
+                    visible: row.text.length === 0 && row.image.length === 0
                     wrapMode: Text.WrapAnywhere
                     text: qsTr("(%1 bytes, not text) %2…").arg(row.size).arg(row.hex)
                     font.family: Theme.typography.mono

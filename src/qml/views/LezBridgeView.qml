@@ -44,6 +44,21 @@ ColumnLayout {
                             var fundingPublicKeyHexes, string maxTxFeeTokens)
     signal copyToClipboard(string text)
 
+    // Built-in LEZ account: the default recipient (windows.13).
+    property bool lezSupported: false
+    property var lezAccount: ({ exists: false })
+    property string lezBalance: ""
+    property string lezError: ""
+    property bool lezBusy: false
+    signal lezCreateRequested()
+    signal lezRefreshRequested()
+    readonly property string ownLezAccount: (lezAccount && lezAccount.exists === true) ? String(lezAccount.account_id) : ""
+    // Fill the recipient with our own account unless the user typed another.
+    onOwnLezAccountChanged: {
+        if (ownLezAccount.length && recipientField.text.trim().length === 0)
+            recipientField.text = ownLezAccount
+    }
+
     // ---- Results from the host ----
     function setGasPrices(success, text) {
         var ep = 1, sp = 7
@@ -294,6 +309,19 @@ ColumnLayout {
                 wrapMode: Text.WordWrap
                 text: qsTr("Bridge tokens to a LEZ public account. You see the plan and fees first; nothing is sent until you confirm. The LEZ side credits the deposit after the L1 block is final.")
                 color: Theme.palette.textSecondary
+            }
+
+            LezAccountCard {
+                supported: root.lezSupported
+                account: root.lezAccount
+                balance: root.lezBalance
+                error: root.lezError
+                busy: root.lezBusy
+                showUseButton: root.ownLezAccount.length > 0 && recipientField.text.trim() !== root.ownLezAccount
+                onCreateRequested: root.lezCreateRequested()
+                onRefreshRequested: root.lezRefreshRequested()
+                onUseRequested: function(accountId) { recipientField.text = accountId }
+                onCopyToClipboard: (text) => root.copyToClipboard(text)
             }
 
             FieldLabel { text: qsTr("From") }

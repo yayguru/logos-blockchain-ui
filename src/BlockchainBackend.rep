@@ -217,6 +217,24 @@ class BlockchainBackend
     // Here because ui_qml may not use the network. Read-only, one fixed method
     // and URL (metadata lez_rpc_url), so QML cannot use it as a proxy.
     SLOT(QVariantMap lezGetAccountBalance(QString accountBase58))
+    // ---- windows.13 ----
+    // Live thread-count change through the module (module windows.5+:
+    // pow_set_max_threads). "" = one thread per CPU. Older modules answer an
+    // error, and the view falls back to writing the config.
+    SLOT(QVariantMap powSetMaxThreads(QString maxThreads))
+    // Size and image type of a local file, for the inscription picker
+    // (ui_qml cannot stat files). { size, kind: png|jpeg|gif|webp|bmp|other }
+    SLOT(QVariantMap inspectFile(QString path))
+    // Deletes ONLY the chain database folder of the current config, with the
+    // node stopped, and only if every file in it is a RocksDB file. Never the
+    // config folder, never keystore/config/key files.
+    SLOT(QVariantMap resetDatabase())
+    // Built-in LEZ public account kept beside the node keystore
+    // (lez_account.json). lezAccount answers { exists, account_id, public_key,
+    // path, dir } and never the secret key.
+    SLOT(QVariantMap lezAccount())
+    SLOT(QVariantMap lezCreateAccount())
+    SLOT(QVariantMap backupLezAccount(QString destinationPath))
     // A stop the user asked for was refused. Deliberately a signal, not a state:
     // the node is still running and still catching up, so the status must keep
     // saying so — this is a one-off "that didn't work, try again", not a mode
