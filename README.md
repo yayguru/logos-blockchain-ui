@@ -4,7 +4,26 @@ A QML + C++ backend UI module for the [Logos](https://logos.co) platform that pr
 
 Built with [`logos-module-builder`](https://github.com/logos-co/logos-module-builder) using the `mkLogosQmlModule` pattern (QML frontend + C++ backend with Qt Remote Objects).
 
-**Windows users:** see [WINDOWS.md](WINDOWS.md) for a from-scratch Basecamp install guide (unofficial yayguru builds).
+## Windows (unofficial yayguru build) — start here
+
+This fork (branch `windows-x86_64`) ships a **Windows build** of the Logos Blockchain node + app for
+Logos Basecamp. It is a community build by yayguru, not an official Logos release.
+
+1. Download two files: the **module** `blockchain_module-0.3.4-windows-x86_64.lgx` from the newest
+   [module release](https://github.com/yayguru/logos-blockchain-module/releases) and the **UI**
+   `blockchain_ui-0.3.5-windows-x86_64.lgx` from the newest [UI release](https://github.com/yayguru/logos-blockchain-ui/releases).
+   Or use `LogosBlockchain-installer-windows.zip` from the UI release.
+2. Basecamp → Package Manager → Install Local Package: **module first, then UI**. Press *Install*, not *Trust*.
+3. Open **Blockchain** → *Use an existing config* (if you already have a node) or *Start a new node* (new users) → Start Node.
+4. **Settings → Back up your keys → Save keystore backup** (saves a verified copy to `Documents\LogosBackups`).
+5. Update later: **Stop Node → Reinstall module → Reinstall UI → Start Node.**
+
+Do **not** install the node from Basecamp's official catalog on Windows: it has no Windows version.
+Full guide (mining, threads, stake explained, updates, troubleshooting): **[WINDOWS.md](WINDOWS.md)**.
+
+---
+
+The rest of this README is the upstream developer documentation.
 
 ## Features
 
