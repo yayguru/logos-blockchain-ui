@@ -102,6 +102,8 @@ ColumnLayout {
         property real imageSize: -1
         property string imageError: ""
         property string imageDataUrl: ""
+        property int imageWidth: 0
+        property int imageHeight: 0
         readonly property int imageMaxBytes: 512 * 1024
         function pickImage(path) {
             imagePath = path
@@ -109,6 +111,8 @@ ColumnLayout {
             imageSize = -1
             imageError = ""
             imageDataUrl = ""
+            imageWidth = 0
+            imageHeight = 0
             estimatedFee = ""
             if (!root.chain || !root.chain.inspectAvailable) {
                 imageError = qsTr("This backend cannot check image files; update the app.")
@@ -119,6 +123,8 @@ ColumnLayout {
                 imageKind = String(v.kind || "")
                 imageSize = Number(v.size || 0)
                 imageDataUrl = String(v.previewUrl || "")
+                imageWidth = Number(v.width || 0)
+                imageHeight = Number(v.height || 0)
                 if (["png", "jpeg", "gif", "webp"].indexOf(imageKind) < 0)
                     imageError = qsTr("Not a PNG, JPEG, GIF or WebP image.")
                 else if (imageSize > imageMaxBytes)
@@ -370,7 +376,7 @@ ColumnLayout {
                     visible: d.imagePath.length > 0 && d.imageError.length === 0 && d.imageSize >= 0
                     text: qsTr("%1 · %2 KB%3").arg(d.imageKind.toUpperCase()).arg((d.imageSize / 1024).toFixed(1))
                               .arg(imagePreview.status === Image.Ready
-                                   ? qsTr(" · %1×%2 px").arg(imagePreview.implicitWidth).arg(imagePreview.implicitHeight)
+                                   ? (d.imageWidth > 0 ? qsTr(" · %1×%2 px").arg(d.imageWidth).arg(d.imageHeight) : "")
                                    : (imagePreview.status === Image.Error ? qsTr(" · no preview for this format here") : ""))
                     font.pixelSize: Theme.typography.secondaryText
                     color: Theme.palette.textSecondary

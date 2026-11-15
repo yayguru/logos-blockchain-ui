@@ -30,6 +30,8 @@
 #include <QJsonObject>
 #include <QDirIterator>
 #include <QSettings>
+#include <QBuffer>
+#include <QImageReader>
 #include <memory>
 #include <QPointer>
 #include <QSignalBlocker>
@@ -3853,7 +3855,18 @@ QVariantMap BlockchainBackend::inspectFile(QString path)
     // (file:// elsewhere and data: URLs are both blocked by Basecamp).
     if (kind != QLatin1String("other") && fi.size() > 0 && fi.size() <= 2 * 1024 * 1024) {
         f.seek(0);
-        const QString url = cacheImageBytes(f.readAll(), kind);
+        const QByteArray bytes = f.readAll();
+        {
+            QBuffer buf;
+            buf.setData(bytes);
+            buf.open(QIODevice::ReadOnly);
+            const QSize dim = QImageReader(&buf).size();   // header only
+            if (dim.isValid()) {
+                out.insert(QStringLiteral("width"), dim.width());
+                out.insert(QStringLiteral("height"), dim.height());
+            }
+        }
+        const QString url = cacheImageBytes(bytes, kind);
         if (!url.isEmpty())
             out.insert(QStringLiteral("previewUrl"), url);
     }
