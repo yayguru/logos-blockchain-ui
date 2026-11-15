@@ -127,9 +127,19 @@ ColumnLayout {
 
         LogosButton {
             objectName: "keysDownloadButton"
+            Accessible.name: text
+            variant: LogosButton.Variant.Primary
             enabled: root.keystorePath.length > 0
-            text: qsTr("Download keystore.yaml")
-            onClicked: keystoreSaveDialog.open()
+            text: qsTr("Save backup to Documents")
+            onClicked: root.downloadRequested("")
+        }
+
+        LogosButton {
+            objectName: "keysFolderButton"
+            Accessible.name: text
+            enabled: root.keystorePath.length > 0
+            text: qsTr("Choose folder…")
+            onClicked: keystoreFolderDialog.open()
         }
 
         Item { Layout.fillWidth: true }
@@ -157,14 +167,13 @@ ColumnLayout {
 
     Item { Layout.fillHeight: true }
 
-    FileDialog {
-        id: keystoreSaveDialog
-        title: qsTr("Save a copy of your keystore")
+    // A folder, not a file name: the backend names the copy
+    // keystore-backup-<date>.yaml and verifies it byte for byte.
+    FolderDialog {
+        id: keystoreFolderDialog
+        title: qsTr("Choose a folder for the keystore backup")
         modality: Qt.NonModal
-        fileMode: FileDialog.SaveFile
         currentFolder: StandardPaths.standardLocations(StandardPaths.DocumentsLocation)[0]
-        defaultSuffix: "yaml"
-        nameFilters: [qsTr("Keystore files (*.yaml *.yml)"), qsTr("All files (*)")]
-        onAccepted: root.downloadRequested(selectedFile)
+        onAccepted: root.downloadRequested(String(selectedFolder))
     }
 }

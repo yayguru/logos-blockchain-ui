@@ -37,6 +37,9 @@ ColumnLayout {
     // host as a toast rather than kept here.
     property string backupError: ""
     onBackupErrorChanged: backupResultNotice.shown = root.backupError.length > 0
+    // Full path of the last verified copy (keystore or LEZ key), or empty.
+    property string backupSavedPath: ""
+    property bool backupBusy: false
 
     signal backupKeystoreRequested(string destinationPath)
     // ---- windows.13 ----
@@ -345,14 +348,50 @@ ColumnLayout {
                 font.pixelSize: Theme.typography.secondaryText
             }
 
-            LogosButton {
-                objectName: "backupKeystoreButton"
+            LogosText {
+                Accessible.name: text
+                Layout.fillWidth: true
+                wrapMode: Text.WordWrap
+                visible: root.nodeKeystorePath.length > 0
+                text: qsTr("One click saves a verified copy named keystore-backup-<date>.yaml to "
+                           + "Documents\\LogosBackups. Or choose a folder — a USB stick or a "
+                           + "cloud-synced folder is best. Then keep that file safe.")
+                color: Theme.palette.textTertiary
+                font.pixelSize: Theme.typography.secondaryText
+            }
+
+            RowLayout {
+                Layout.fillWidth: true
                 Layout.topMargin: Theme.spacing.small
-                Layout.alignment: Qt.AlignRight
-                variant: LogosButton.Variant.Primary
-                enabled: root.nodeKeystorePath.length > 0
-                text: qsTr("Download keystore.yaml")
-                onClicked: keystoreSaveDialog.open()
+                spacing: Theme.spacing.small
+                Item { Layout.fillWidth: true }
+                LogosButton {
+                    objectName: "backupKeystoreFolderButton"
+                    Accessible.name: text
+                    enabled: root.nodeKeystorePath.length > 0 && !root.backupBusy
+                    text: qsTr("Choose folder…")
+                    onClicked: { keystoreFolderDialog.target = "keystore"; keystoreFolderDialog.open() }
+                }
+                LogosButton {
+                    objectName: "backupKeystoreButton"
+                    Accessible.name: text
+                    variant: LogosButton.Variant.Primary
+                    enabled: root.nodeKeystorePath.length > 0 && !root.backupBusy
+                    text: qsTr("Save backup to Documents")
+                    onClicked: root.backupKeystoreRequested("")
+                }
+            }
+
+            LogosText {
+                objectName: "backupSavedPathText"
+                Accessible.name: text
+                Layout.fillWidth: true
+                wrapMode: Text.WrapAnywhere
+                visible: root.backupSavedPath.length > 0
+                text: qsTr("Saved and verified (same size and SHA-256 as the original): %1")
+                      .arg(root.backupSavedPath)
+                color: Theme.palette.success
+                font.pixelSize: Theme.typography.secondaryText
             }
 
             RowLayout {
@@ -370,9 +409,18 @@ ColumnLayout {
                     color: root.lezBackedUp ? Theme.palette.textSecondary : Theme.palette.warning
                 }
                 LogosButton {
+                    objectName: "backupLezAccountFolderButton"
+                    Accessible.name: text
+                    enabled: !root.backupBusy
+                    text: qsTr("Choose folder…")
+                    onClicked: { keystoreFolderDialog.target = "lez"; keystoreFolderDialog.open() }
+                }
+                LogosButton {
                     objectName: "backupLezAccountButton"
-                    text: qsTr("Download lez_account.json")
-                    onClicked: lezSaveDialog.open()
+                    Accessible.name: text
+                    enabled: !root.backupBusy
+                    text: qsTr("Save LEZ key to Documents")
+                    onClicked: root.backupLezAccountRequested("")
                 }
             }
 
@@ -501,26 +549,23 @@ ColumnLayout {
     }
 
 
-    FileDialog {
-        id: lezSaveDialog
-        title: qsTr("Save a copy of your LEZ account key")
+    // A folder, not a file name: the name is ours (keystore-backup-<date>.yaml),
+    // so there is nothing for the user to type. selectedFolder is a URL
+    // (file:///C:/...); the backend turns it into a local path.
+    FolderDialog {
+        id: keystoreFolderDialog
+        property string target: "keystore"
+        title: target === "lez" ? qsTr("Choose a folder for the LEZ key backup")
+                                : qsTr("Choose a folder for the keystore backup")
         modality: Qt.NonModal
-        fileMode: FileDialog.SaveFile
         currentFolder: StandardPaths.standardLocations(StandardPaths.DocumentsLocation)[0]
-        defaultSuffix: "json"
-        nameFilters: [qsTr("JSON files (*.json)"), qsTr("All files (*)")]
-        onAccepted: root.backupLezAccountRequested(selectedFile)
-    }
-
-    FileDialog {
-        id: keystoreSaveDialog
-        title: qsTr("Save a copy of your keystore")
-        modality: Qt.NonModal
-        fileMode: FileDialog.SaveFile
-        currentFolder: StandardPaths.standardLocations(StandardPaths.DocumentsLocation)[0]
-        defaultSuffix: "yaml"
-        nameFilters: [qsTr("Keystore files (*.yaml *.yml)"), qsTr("All files (*)")]
-        onAccepted: root.backupKeystoreRequested(selectedFile)
+        onAccepted: {
+            const folder = String(selectedFolder)
+            if (target === "lez")
+                root.backupLezAccountRequested(folder)
+            else
+                root.backupKeystoreRequested(folder)
+        }
     }
 
 

@@ -784,12 +784,20 @@ Rectangle {
                 function(e) { _d.lezBusy = false; _d.lezError = String(e) })
         }
         function backupLez(dest) {
+            nodeSettingsView.backupBusy = true
             logos.watch(root.backend.backupLezAccount(dest),
                 function(r) {
-                    if (r.success) { keystoreBackupToast.show(qsTr("LEZ account key saved"), r.value); _d.refreshLez() }
-                    else _d.lezError = String(r.error || "")
+                    nodeSettingsView.backupBusy = false
+                    if (r.success) {
+                        nodeSettingsView.backupError = ""
+                        nodeSettingsView.backupSavedPath = String(r.value)
+                        keystoreBackupToast.show(qsTr("LEZ account key saved and verified"), r.value)
+                        _d.refreshLez()
+                    } else {
+                        nodeSettingsView.backupError = String(r.error || "")
+                    }
                 },
-                function(e) { _d.lezError = String(e) })
+                function(e) { nodeSettingsView.backupBusy = false; nodeSettingsView.backupError = String(e) })
         }
 
         // Stop and start the same node with the same config, keeping the
@@ -1534,18 +1542,24 @@ Rectangle {
                         nodeKeystorePath: root.backend ? root.backend.nodeKeystorePath : ""
                         onBackupKeystoreRequested: function(destinationPath) {
                         if (!root.backend) return
+                        nodeSettingsView.backupBusy = true
                         logos.watch(
                             root.backend.backupKeystore(destinationPath),
                             function(result) {
+                                nodeSettingsView.backupBusy = false
                                 if (result.success) {
                                     nodeSettingsView.backupError = ""
+                                    nodeSettingsView.backupSavedPath = String(result.value)
+                                    console.log("keystore backup verified:", String(result.value))
                                     keystoreBackupToast.show(
-                                        qsTr("Keystore saved"), result.value)
+                                        qsTr("Keystore saved and verified"), result.value)
                                 } else {
+                                    nodeSettingsView.backupSavedPath = ""
                                     nodeSettingsView.backupError = _d.errorText(result.error)
                                 }
                             },
                             function(error) {
+                                nodeSettingsView.backupBusy = false
                                 nodeSettingsView.backupError = _d.errorText(error)
                             }
                         )

@@ -654,8 +654,8 @@ Item {
                 title: qsTr("Back up your keys")
                 message: qsTr("Your keystore has not been saved anywhere else. Nothing can "
                               + "reissue these keys, and the rewards this node earns are only "
-                              + "reachable with them. Settings → Back up your keys has the "
-                              + "download.")
+                              + "reachable with them. Settings → Back up your keys saves a "
+                              + "verified copy in one click.")
             }
 
             // ---- Node hero: status headline + lifecycle lane ----

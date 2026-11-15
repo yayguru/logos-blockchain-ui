@@ -12,7 +12,9 @@
 #include <QByteArray>
 #include <QClipboard>
 #include <QCoreApplication>
+#include <QDate>
 #include <QDateTime>
+#include <QTime>
 #include <QDebug>
 #include <QDir>
 #include <QFile>
@@ -100,9 +102,17 @@ void BlockchainBackend::setError(const QString& message)
 
 static QString toLocalPath(const QString& pathInput)
 {
-    if (pathInput.trimmed().isEmpty())
+    const QString trimmed = pathInput.trimmed();
+    if (trimmed.isEmpty())
         return pathInput;
-    return QUrl::fromUserInput(pathInput).toLocalFile();
+    // A QML dialog answers with a URL (file:///C:/Users/... on Windows,
+    // file:///home/... elsewhere). QUrl knows how to turn that into a local
+    // path, drive letter and percent-escapes included.
+    if (trimmed.startsWith(QStringLiteral("file:"), Qt::CaseInsensitive))
+        return QUrl(trimmed).toLocalFile();
+    // A plain path stays a path. QUrl::fromUserInput would read a relative or
+    // not-yet-existing name ("keystore.yaml") as a web address and lose it.
+    return QDir::fromNativeSeparators(trimmed);
 }
 
 // Under --user-dir (LOGOS_USER_DIR) everything this app saves stays in that
@@ -1734,6 +1744,91 @@ QVariantMap BlockchainBackend::getKeystoreKeys(QString configPath)
     return result::toVariantMap(LogosResult{true, rows, QVariant()});
 }
 
+// ---- Verified backups --------------------------------------------------------
+// The user picks a FOLDER (or none: Documents\LogosBackups). The file name is
+// ours: <base>-YYYYMMDD.<ext>, with -HHmmss added if a different file already
+// has that name. After the copy both files are read back and compared (size
+// and SHA-256); only a byte-identical copy counts as a backup.
+static QByteArray fileSha256(const QString& path, qint64* size)
+{
+    QFile f(path);
+    if (!f.open(QIODevice::ReadOnly))
+        return {};
+    QCryptographicHash h(QCryptographicHash::Sha256);
+    if (!h.addData(&f))
+        return {};
+    if (size)
+        *size = f.size();
+    return h.result();
+}
+
+static QString defaultBackupFolder()
+{
+    QString docs = QStandardPaths::writableLocation(QStandardPaths::DocumentsLocation);
+    if (docs.isEmpty())
+        docs = QDir::homePath();
+    return QDir(docs).filePath(QStringLiteral("LogosBackups"));
+}
+
+static LogosResult copyVerified(const QString& source, const QString& destinationInput,
+                                const QString& baseName, const QString& suffix)
+{
+    const auto fail = [](const QString& m) { return LogosResult{false, QVariant(), m}; };
+    qint64 srcSize = -1;
+    const QByteArray srcHash = fileSha256(source, &srcSize);
+    if (srcHash.isEmpty())
+        return fail(QStringLiteral("Could not read %1.").arg(QDir::toNativeSeparators(source)));
+
+    QString dest = toLocalPath(destinationInput);
+    if (dest.trimmed().isEmpty())
+        dest = defaultBackupFolder();
+    QFileInfo di(dest);
+    // A folder, or a path that does not exist yet and has no file suffix.
+    const bool isFolder = di.isDir() || (!di.exists() && di.suffix().isEmpty());
+
+    QString target;
+    if (isFolder) {
+        if (!QDir().mkpath(dest))
+            return fail(QStringLiteral("Could not create the folder %1.").arg(QDir::toNativeSeparators(dest)));
+        const QString folderCanon = QFileInfo(dest).canonicalFilePath();
+        const QString srcDirCanon = QFileInfo(QFileInfo(source).absolutePath()).canonicalFilePath();
+        if (!folderCanon.isEmpty() && folderCanon.compare(srcDirCanon, Qt::CaseInsensitive) == 0)
+            return fail(QStringLiteral("That is the node's own data folder. Pick a different folder, "
+                                       "ideally on a USB stick or cloud drive."));
+        const QDir dir(dest);
+        const QString stamp = QDate::currentDate().toString(QStringLiteral("yyyyMMdd"));
+        target = dir.filePath(QStringLiteral("%1-%2.%3").arg(baseName, stamp, suffix));
+        if (QFile::exists(target)) {
+            qint64 sz = -1;
+            if (fileSha256(target, &sz) == srcHash && sz == srcSize)
+                return LogosResult{true, QDir::toNativeSeparators(target), QVariant()};
+            target = dir.filePath(QStringLiteral("%1-%2-%3.%4").arg(
+                baseName, stamp, QTime::currentTime().toString(QStringLiteral("HHmmss")), suffix));
+        }
+    } else {
+        target = dest;
+        if (QFileInfo(target).absoluteFilePath().compare(QFileInfo(source).absoluteFilePath(),
+                                                         Qt::CaseInsensitive) == 0)
+            return fail(QStringLiteral("Pick a different place than the original."));
+        if (QFile::exists(target) && !QFile::remove(target))
+            return fail(QStringLiteral("Could not replace %1.").arg(QDir::toNativeSeparators(target)));
+    }
+
+    if (!QFile::copy(source, target))
+        return fail(QStringLiteral("Could not write %1.").arg(QDir::toNativeSeparators(target)));
+    // QFile::copy keeps a read-only bit from the source; the user owns the copy.
+    QFile::setPermissions(target, QFileDevice::ReadOwner | QFileDevice::WriteOwner);
+
+    qint64 dstSize = -1;
+    const QByteArray dstHash = fileSha256(target, &dstSize);
+    if (dstHash != srcHash || dstSize != srcSize) {
+        QFile::remove(target);
+        return fail(QStringLiteral("The copy at %1 did not match the original, so it was removed. "
+                                   "Try another folder.").arg(QDir::toNativeSeparators(target)));
+    }
+    return LogosResult{true, QDir::toNativeSeparators(target), QVariant()};
+}
+
 // Copy, not move. The node reads this file on every start, so a "backup" that
 // relocated it would take the node's keys away at the moment the user was
 // trying to protect them.
@@ -1743,23 +1838,15 @@ QVariantMap BlockchainBackend::backupKeystore(QString destinationPath)
     if (source.isEmpty())
         return result::toVariantMap(result::err(QStringLiteral("No keystore found to back up.")));
 
-    const QString target = toLocalPath(destinationPath.trimmed());
-    if (target.isEmpty())
-        return result::toVariantMap(result::err(QStringLiteral("No destination was given.")));
-
-    // QFile::copy refuses to overwrite, and the save dialog has already asked
-    // the user about replacing. Clear the way so their answer is honoured.
-    if (QFile::exists(target) && !QFile::remove(target)) {
-        return result::toVariantMap(
-            result::err(QStringLiteral("Could not replace %1.").arg(target)));
-    }
-    if (!QFile::copy(source, target)) {
-        return result::toVariantMap(
-            result::err(QStringLiteral("Could not write %1.").arg(target)));
-    }
-    // The copy landed, so the reminder is answered.
+    // destinationPath: a folder (URL or path), empty for Documents\LogosBackups,
+    // or (older callers) a full file path.
+    const LogosResult r = copyVerified(source, destinationPath,
+                                       QStringLiteral("keystore-backup"), QStringLiteral("yaml"));
+    if (!r.success)
+        return result::toVariantMap(r);
+    // A verified copy exists, so the reminder is answered.
     markKeysBackedUp();
-    return result::toVariantMap(LogosResult{true, target, QVariant()});
+    return result::toVariantMap(r);
 }
 
 void BlockchainBackend::refreshDiskUsage()
@@ -4120,15 +4207,10 @@ QVariantMap BlockchainBackend::backupLezAccount(QString destinationPath)
     const QString source = lezAccountFileIn(dir);
     if (source.isEmpty() || !QFile::exists(source))
         return result::toVariantMap(result::err(QStringLiteral("There is no LEZ account to back up yet.")));
-    const QString target = toLocalPath(destinationPath.trimmed());
-    if (target.isEmpty())
-        return result::toVariantMap(result::err(QStringLiteral("No destination was given.")));
-    if (QFileInfo(target).absoluteFilePath().compare(QFileInfo(source).absoluteFilePath(), Qt::CaseInsensitive) == 0)
-        return result::toVariantMap(result::err(QStringLiteral("Pick a different place than the original.")));
-    if (QFile::exists(target) && !QFile::remove(target))
-        return result::toVariantMap(result::err(QStringLiteral("Could not replace %1.").arg(target)));
-    if (!QFile::copy(source, target))
-        return result::toVariantMap(result::err(QStringLiteral("Could not write %1.").arg(target)));
+    const LogosResult r = copyVerified(source, destinationPath,
+                                       QStringLiteral("lez-account-backup"), QStringLiteral("json"));
+    if (!r.success)
+        return result::toVariantMap(r);
     appSettings()->setValue(QStringLiteral("lezAccountBackedUp"), true);
-    return result::toVariantMap(LogosResult{true, target, QVariant()});
+    return result::toVariantMap(r);
 }
