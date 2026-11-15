@@ -37,6 +37,7 @@ ColumnLayout {
 
     signal notesRequested(string addressHex)
     signal gasPricesRequested()
+    property var chain: null
     signal splitRequested(string fromKeyHex, string amountTokens)
     signal depositRequested(string channelIdHex, var inputNoteIdHexes,
                             string metadataBase58, string changePublicKeyHex,
@@ -552,6 +553,7 @@ ColumnLayout {
                 id: tracker
                 lezChannelId: root.lezChannelId
                 nodeRunning: root.nodeRunning
+                chain: root.chain
             }
         }
     }

@@ -23,6 +23,8 @@ ColumnLayout {
     property string nodeOffReason: ""
     property int nodeOffSeverity: LogosNotice.Info
     property string nodeDataDir: ""
+    property var chain: null
+    readonly property bool autoIdentPending: d.autoIdent
 
     signal estimateRequested(string requestJson)
     signal submitRequested(string requestJson)
@@ -40,7 +42,12 @@ ColumnLayout {
     }
     function setIdent(success, text) {
         d.pending = false
+        var quiet = d.autoIdent
+        d.autoIdent = false
         if (!success) {
+            // The automatic lookup on open stays silent when there is no key yet.
+            if (quiet)
+                return
             d.previewOk = false
             d.previewText = text
             return
@@ -76,6 +83,10 @@ ColumnLayout {
 
     spacing: Theme.spacing.large
 
+    onNodeRunningChanged: d.tryAutoIdent()
+    onNodeDataDirChanged: d.tryAutoIdent()
+    Component.onCompleted: d.tryAutoIdent()
+
     QtObject {
         id: d
         property bool pending: false
@@ -85,6 +96,21 @@ ColumnLayout {
         property string signer: ""
         property string txHash: ""
         property int mode: 0 // 0 text, 1 file
+        property bool autoIdent: false
+        property bool autoIdentDone: false
+
+        // Fill the channel id from the default key once, so the history below
+        // has something to show without a click. Read-only.
+        function tryAutoIdent() {
+            if (autoIdentDone || !root.nodeRunning || channelIdField.text.trim().length)
+                return
+            var p = defaultKeyPath()
+            if (!p.length)
+                return
+            autoIdentDone = true
+            autoIdent = true
+            root.identRequested(p)
+        }
 
         function parsePreview(text) {
             try {
@@ -360,6 +386,7 @@ ColumnLayout {
             InscriptionHistory {
                 channelId: channelIdField.text
                 nodeRunning: root.nodeRunning
+                chain: root.chain
                 onCopyToClipboard: (text) => root.copyToClipboard(text)
             }
 

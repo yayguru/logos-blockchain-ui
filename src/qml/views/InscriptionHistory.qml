@@ -5,26 +5,27 @@ import Logos.Theme
 import Logos.Controls
 
 import "../controls"
-import "NodeHttp.js" as NodeHttp
+import "ChainRead.js" as ChainRead
 
-// Read-only viewer of a channel's inscriptions, straight from the local
-// node's HTTP API. "Latest" jumps to the channel tip slot; "Scan" walks back
-// through recent blocks. Nothing is signed or sent.
+// Read-only viewer of a channel's inscriptions. It walks back from the chain
+// tip through the blockchain module (get_block), 100 blocks per click, and
+// lists this channel's inscriptions newest first. Nothing is signed or sent.
 LogosFrame {
     id: root
     objectName: "inscriptionHistory"
 
     property string channelId: ""
-    property string apiBase: "http://127.0.0.1:8080"
+    // { info(cb), block(id, cb) } from BlockchainView.
+    property var chain: null
     property bool nodeRunning: false
-    property int scanBlocks: 400
+    property int scanBlocks: 100
 
     signal copyToClipboard(string text)
 
-    function latest() { d.loadLatest() }
-    function scan() { d.scan(d.oldestSlot > 0) }
+    function scan() { d.scan() }
     readonly property int count: items.count
     readonly property string statusText: d.status
+    readonly property bool busy: d.busy
     function itemText(i) { var r = items.get(i); return r ? (r.slot + " " + r.tx.slice(0, 8) + " " + r.text) : "" }
 
     Layout.fillWidth: true
@@ -40,7 +41,8 @@ LogosFrame {
         property bool busy: false
         property string status: ""
         property int oldestSlot: -1
-        property int tipSlot: -1
+        property string nextId: ""
+        property int scanned: 0
         property string seen: "|"
 
         function cid() {
@@ -52,6 +54,8 @@ LogosFrame {
             items.clear()
             seen = "|"
             oldestSlot = -1
+            nextId = ""
+            scanned = 0
             status = ""
         }
 
@@ -73,7 +77,7 @@ LogosFrame {
                         var key = mt.hash + ":" + o
                         if (seen.indexOf("|" + key + "|") >= 0) continue
                         seen += key + "|"
-                        var dec = NodeHttp.hexToText(op.payload.inscription)
+                        var dec = ChainRead.hexToText(op.payload.inscription)
                         var row = {
                             slot: slot,
                             tx: String(mt.hash || ""),
@@ -94,38 +98,31 @@ LogosFrame {
             return found
         }
 
-        function loadLatest() {
+        function scan() {
             if (!valid()) { status = qsTr("Enter or load a 64-character channel id first."); return }
+            if (!root.chain) { status = qsTr("Not connected to the blockchain module."); return }
+            if (nextId === "done") { status = qsTr("Reached the start of the node's chain."); return }
             busy = true
-            status = qsTr("Reading the channel tip…")
-            NodeHttp.getJson(root.apiBase + "/channel/" + cid(), 20000, function(ok, o) {
-                if (!ok) { busy = false; status = qsTr("This channel is not known to the node yet (%1).").arg(o); return }
-                tipSlot = Number(o.tip_slot || -1)
-                if (tipSlot < 0) { busy = false; status = qsTr("The channel has no inscription yet."); return }
-                NodeHttp.getBlocks(root.apiBase, "slot_from=" + tipSlot + "&slot_to=" + tipSlot + "&blocks_limit=5",
-                    function(ok2, blocks) {
-                        busy = false
-                        if (!ok2) { status = qsTr("Could not read slot %1: %2").arg(tipSlot).arg(blocks); return }
-                        var n = addFrom(blocks)
-                        status = n ? qsTr("Latest inscription is at slot %1.").arg(tipSlot)
-                                   : qsTr("The tip is at slot %1, but that block is not on this node's chain view.").arg(tipSlot)
-                    })
-            })
-        }
-
-        function scan(older) {
-            if (!valid()) { status = qsTr("Enter or load a 64-character channel id first."); return }
-            busy = true
-            var q = "descending=true&blocks_limit=" + root.scanBlocks
-            if (older && oldestSlot > 0) q += "&slot_to=" + (oldestSlot - 1)
-            status = older ? qsTr("Scanning %1 older blocks…").arg(root.scanBlocks)
-                           : qsTr("Scanning the last %1 blocks…").arg(root.scanBlocks)
-            NodeHttp.getBlocks(root.apiBase, q, function(ok, blocks) {
-                busy = false
-                if (!ok) { status = qsTr("Scan failed: %1").arg(blocks); return }
-                var n = addFrom(blocks)
-                status = qsTr("Scanned %1 blocks back to slot %2; %3 new inscription(s), %4 shown.")
-                             .arg(blocks.length).arg(oldestSlot).arg(n).arg(items.count)
+            status = qsTr("Reading %1 blocks…").arg(root.scanBlocks)
+            var start = function(fromId) {
+                ChainRead.walkBack(root.chain, fromId, root.scanBlocks, -1, function(b) {
+                    addFrom([b])
+                    nextId = String(b.header.parent_block || "")
+                    return false
+                }, function(ok, info, n) {
+                    busy = false
+                    scanned += n
+                    if (!ok) { status = qsTr("Stopped after %1 blocks: %2").arg(n).arg(String(info)); return }
+                    if (!nextId.length) nextId = "done"
+                    status = qsTr("Read %1 blocks back to slot %2; %3 inscription(s) from this channel.")
+                                 .arg(scanned).arg(String(oldestSlot)).arg(items.count)
+                })
+            }
+            if (nextId.length) { start(nextId); return }
+            root.chain.info(function(ok, v) {
+                var inf = ok ? ChainRead.parseInfo(v) : null
+                if (!inf || !inf.tip.length) { busy = false; status = qsTr("Could not read the chain tip."); return }
+                start(inf.tip)
             })
         }
     }
@@ -143,24 +140,17 @@ LogosFrame {
             }
             Item { Layout.fillWidth: true }
             LogosButton {
-                objectName: "inscriptionLatestButton"
-                text: qsTr("Latest")
-                Accessible.name: text
-                enabled: root.nodeRunning && !d.busy
-                onClicked: d.loadLatest()
-            }
-            LogosButton {
                 objectName: "inscriptionScanButton"
-                text: items.count || d.oldestSlot > 0 ? qsTr("Scan older") : qsTr("Scan recent")
+                text: d.scanned > 0 ? qsTr("Scan older") : qsTr("Scan recent")
                 Accessible.name: text
-                enabled: root.nodeRunning && !d.busy
-                onClicked: d.scan(d.oldestSlot > 0)
+                enabled: root.nodeRunning && !d.busy && root.chain !== null
+                onClicked: d.scan()
             }
         }
         LogosText {
             Layout.fillWidth: true
             wrapMode: Text.WordWrap
-            text: qsTr("Read from your node only. Shows what this channel has written on chain, newest first.")
+            text: qsTr("Read from your node only. Shows what this channel has written on chain, newest first; each click reads %1 more blocks.").arg(root.scanBlocks)
             font.pixelSize: Theme.typography.secondaryText
             color: Theme.palette.textSecondary
         }

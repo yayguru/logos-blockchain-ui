@@ -23,6 +23,9 @@ RowLayout {
     // build carries none.
     property string lezChannelId: ""
     property string nodeDataDir: ""
+    // Read-only chain access ({ info(cb), block(id, cb) }) for the tracker and
+    // inscription history.
+    property var chain: null
 
     // ---- Requests out (the host orchestrates these) ----
     signal refreshAccountsRequested()
@@ -67,8 +70,12 @@ RowLayout {
     }
     function setInscribePreview(success, value) { inscribeView.setPreview(success, value) }
     function setChannelIdent(success, value) {
+        // The Inscribe view's silent lookup on open is not the user's Load id in
+        // Channel Withdraw; a missing key must not show an error there.
+        var auto = inscribeView.autoIdentPending
         inscribeView.setIdent(success, value)
-        withdrawView.setIdent(success, value)
+        if (!auto || success)
+            withdrawView.setIdent(success, value)
     }
     function setInscribeResult(success, value) { inscribeView.setSubmitResult(success, value) }
     function setWithdrawPreview(success, value) { withdrawView.setPreview(success, value) }
@@ -137,6 +144,7 @@ RowLayout {
                 accountRows: root.accountRows
                 nodeRunning: root.nodeRunning
                 lezChannelId: root.lezChannelId
+                chain: root.chain
                 onNotesRequested: (addressHex) => root.lezNotesRequested(addressHex)
                 onGasPricesRequested: root.gasPricesRequested("lez")
                 onSplitRequested: (fromKeyHex, amountTokens) =>
@@ -173,6 +181,7 @@ RowLayout {
                 accountRows: root.accountRows
                 nodeRunning: root.nodeRunning
                 nodeDataDir: root.nodeDataDir
+                chain: root.chain
                 onEstimateRequested: (requestJson) => root.inscribeEstimateRequested(requestJson)
                 onSubmitRequested: (requestJson) => root.inscribeSubmitRequested(requestJson)
                 onKeygenRequested: (keyPath) => root.channelKeygenRequested(keyPath)

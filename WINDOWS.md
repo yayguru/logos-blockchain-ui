@@ -80,20 +80,27 @@ and the estimated fee. Nothing is sent until you tick the confirmation box and p
 
 1 token = 1,000,000,000 base units ("lepta").
 
-### LEZ deposit tracker and inscription history (windows.9+)
+### LEZ deposit tracker and inscription history (windows.10+)
+
+Basecamp does not let UI plugins use the network (*"sandboxed ui_qml modules may not use the network"*).
+So both features read the chain **through the blockchain module** (`getCryptarchiaInfo`, `getBlock`), not over HTTP.
+In windows.9 they used HTTP and were blocked inside Basecamp; windows.10 fixes this.
 
 * **LEZ Bridge → Deposit tracker** follows every bridge deposit through four steps:
   *Sent → In an L1 block → Final on L1 → Credited on LEZ*.
-  It shows how many slots are left until the L1 block is final (LIB),
-  and it watches the LEZ account balance through the public LEZ RPC (`testnet.lez.logos.co`).
-  New deposits are added automatically.
-  To follow an older deposit, enter its tx hash, amount, LEZ account and (optionally) the slot and the previous balance.
+  It finds the block that holds the deposit by walking back from the tip (up to 300 blocks).
+  It shows how many slots are left until that block is final (LIB).
+  The UI cannot reach the LEZ RPC, so the last step is manual:
+  check the balance in a LEZ wallet, then press **Mark credited**.
+  New deposits are added automatically. To follow an older deposit, enter its tx hash, amount, LEZ account and the L1 slot.
   The list is kept in `blockchain_ui_lez_tracker.ini` and survives restarts. It only reads data and never sends anything.
 * If the channel field holds anything other than the LEZ bridge channel,
-  the bridge screen now says *"To channel …"* instead of LEZ. Nothing credits a LEZ account in that case.
+  the bridge screen says *"To channel …"* instead of LEZ. Nothing credits a LEZ account in that case.
   Only the holder of that channel's key can withdraw the note again.
 * **Inscribe → Inscription history** shows what your channel has written on chain, newest first.
-  *Latest* jumps to the channel tip. *Scan older* walks back 400 blocks at a time. It reads from your own node only.
+  The channel id is filled from your default inscribe key when the screen opens.
+  *Scan recent* reads the last 100 blocks; *Scan older* continues 100 blocks further back each time.
+  It reads from your own node only.
 
 ### Decimal separator
 
@@ -118,7 +125,9 @@ Errors are shown in plain words, with the raw node message after "Details:":
   in `blockchain_ui_resume.ini` in Basecamp's config folder.
   When the UI loads again it starts the node with the **same existing config** and re-arms mining once the node is synced.
   It never creates a new node. It waits about 10 s first. It does nothing if the config changed,
-  if anything already answers on `127.0.0.1:8080`, or if a resume was tried in the last 2 minutes.
+  or if a resume was tried in the last 2 minutes. (It also checks whether something already answers on `127.0.0.1:8080`,
+  but inside Basecamp that check is blocked by the sandbox, so it only helps outside Basecamp.
+  A second node on the same ports would fail to bind rather than run twice.)
   If you press **Stop Node** yourself, nothing is resumed.
 * Turn the switch off if you want the node to stay stopped after an update.
 * Updating the **module** package replaces `logos_blockchain.dll` while it is in use.

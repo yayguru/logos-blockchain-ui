@@ -370,6 +370,24 @@ Rectangle {
         }
     }
 
+    // Read-only chain access for the wallet's tracker and inscription history.
+    // Goes through the module API: Basecamp blocks network access for ui_qml
+    // plugins, so these views cannot use the node's HTTP API directly.
+    QtObject {
+        id: chainReader
+        function call(make, cb) {
+            if (!root.backend) { cb(false, qsTr("Not connected to the blockchain module.")); return }
+            try {
+                logos.watch(make(), function(r) {
+                    if (r && r.success) cb(true, r.value)
+                    else cb(false, r && r.error ? String(r.error) : qsTr("No answer."))
+                }, function(e) { cb(false, String(e)) })
+            } catch (e) { cb(false, String(e.message || e)) }
+        }
+        function info(cb) { call(function() { return root.backend.getCryptarchiaInfo() }, cb) }
+        function block(id, cb) { call(function() { return root.backend.getBlock(id) }, cb) }
+    }
+
     // Node status. Owns its own timers, backoff, sync debounce and progress
     // tracking; see controls/NodeStatusMonitor.qml. Sits outside any layout
     // because it is an Item with no visual presence.
@@ -1039,6 +1057,7 @@ Rectangle {
                     nodeRunning: opPage.nodeRunning
                     lezChannelId: root.backend ? root.backend.lezChannelId : ""
                     nodeDataDir: root.backend ? root.backend.nodeDataDir : ""
+                    chain: chainReader
 
                     onRefreshAccountsRequested: if (root.backend) root.backend.refreshAccounts()
 
