@@ -1615,6 +1615,7 @@ void BlockchainBackend::loadLezChannelId(const QVariantMap& metadata)
 
 void BlockchainBackend::setModuleContext(const QString& modulePath)
 {
+    m_modulePath = modulePath;
     if (modulePath.isEmpty()) {
         qWarning() << "BlockchainBackend: no module path from the host, so"
                    << "metadata.json cannot be read: first-run Quick start and"
@@ -3848,22 +3849,72 @@ QVariantMap BlockchainBackend::inspectFile(QString path)
     QVariantMap out;
     out.insert(QStringLiteral("size"), fi.size());
     out.insert(QStringLiteral("kind"), kind);
-    // A data: URL for the preview. The UI host does not load file:// images
-    // (the preview showed "no preview" for a valid PNG), and data: is also what
-    // the inscription history renders with, so the preview proves that path.
-    static const QHash<QString, QString> mime{
-        { QStringLiteral("png"), QStringLiteral("image/png") },
-        { QStringLiteral("jpeg"), QStringLiteral("image/jpeg") },
-        { QStringLiteral("gif"), QStringLiteral("image/gif") },
-        { QStringLiteral("webp"), QStringLiteral("image/webp") },
-        { QStringLiteral("bmp"), QStringLiteral("image/bmp") } };
-    if (mime.contains(kind) && fi.size() > 0 && fi.size() <= 2 * 1024 * 1024) {
+    // A preview the QML sandbox can load: a copy inside the plugin folder
+    // (file:// elsewhere and data: URLs are both blocked by Basecamp).
+    if (kind != QLatin1String("other") && fi.size() > 0 && fi.size() <= 2 * 1024 * 1024) {
         f.seek(0);
-        const QByteArray bytes = f.readAll();
-        out.insert(QStringLiteral("dataUrl"), QStringLiteral("data:%1;base64,%2")
-                       .arg(mime.value(kind), QString::fromLatin1(bytes.toBase64())));
+        const QString url = cacheImageBytes(f.readAll(), kind);
+        if (!url.isEmpty())
+            out.insert(QStringLiteral("previewUrl"), url);
     }
     out.insert(QStringLiteral("path"), QDir::toNativeSeparators(fi.absoluteFilePath()));
+    return result::toVariantMap(LogosResult{true, out, QVariant()});
+}
+
+static QString imageKindOf(const QByteArray& head)
+{
+    if (head.startsWith("\x89PNG\r\n\x1a\n")) return QStringLiteral("png");
+    if (head.startsWith("\xff\xd8\xff")) return QStringLiteral("jpeg");
+    if (head.startsWith("GIF87a") || head.startsWith("GIF89a")) return QStringLiteral("gif");
+    if (head.size() >= 12 && head.startsWith("RIFF") && head.mid(8, 4) == "WEBP") return QStringLiteral("webp");
+    if (head.startsWith("BM")) return QStringLiteral("bmp");
+    return {};
+}
+
+// Bounded: at most kMaxCachedImages files, oldest removed first. The folder is
+// inside the plugin, so a reinstall clears it too.
+QString BlockchainBackend::cacheImageBytes(const QByteArray& bytes, const QString& kind)
+{
+    constexpr int kMaxCachedImages = 48;
+    if (m_modulePath.isEmpty() || bytes.isEmpty() || kind.isEmpty())
+        return {};
+    QDir dir(m_modulePath);
+    if (!dir.mkpath(QStringLiteral("image-cache")) || !dir.cd(QStringLiteral("image-cache")))
+        return {};
+    const QString ext = kind == QLatin1String("jpeg") ? QStringLiteral("jpg") : kind;
+    const QString name = QString::fromLatin1(
+        QCryptographicHash::hash(bytes, QCryptographicHash::Sha256).toHex().left(32)) + QLatin1Char('.') + ext;
+    const QString path = dir.filePath(name);
+    if (!QFileInfo::exists(path)) {
+        QFile out(path);
+        if (!out.open(QIODevice::WriteOnly) || out.write(bytes) != bytes.size())
+            return {};
+        out.close();
+        const QFileInfoList all = dir.entryInfoList(QDir::Files, QDir::Time);  // newest first
+        for (int i = kMaxCachedImages; i < all.size(); ++i)
+            QFile::remove(all.at(i).absoluteFilePath());
+    }
+    return QUrl::fromLocalFile(path).toString();
+}
+
+QVariantMap BlockchainBackend::imagePreviewFromHex(QString hex)
+{
+    QString h = hex.trimmed();
+    if (h.startsWith(QLatin1String("0x"), Qt::CaseInsensitive))
+        h = h.mid(2);
+    if (h.size() % 2 != 0 || h.size() > 2 * 2 * 1024 * 1024)
+        return result::toVariantMap(result::err(QStringLiteral("Not an image payload.")));
+    const QByteArray bytes = QByteArray::fromHex(h.toLatin1());
+    const QString kind = imageKindOf(bytes.left(16));
+    if (kind.isEmpty())
+        return result::toVariantMap(result::err(QStringLiteral("Not an image payload.")));
+    const QString url = cacheImageBytes(bytes, kind);
+    if (url.isEmpty())
+        return result::toVariantMap(result::err(QStringLiteral("Could not prepare the image preview.")));
+    QVariantMap out;
+    out.insert(QStringLiteral("url"), url);
+    out.insert(QStringLiteral("kind"), kind);
+    out.insert(QStringLiteral("size"), bytes.size());
     return result::toVariantMap(LogosResult{true, out, QVariant()});
 }
 

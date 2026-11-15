@@ -118,7 +118,7 @@ ColumnLayout {
                 if (!ok) { imageError = String(v); return }
                 imageKind = String(v.kind || "")
                 imageSize = Number(v.size || 0)
-                imageDataUrl = String(v.dataUrl || "")
+                imageDataUrl = String(v.previewUrl || "")
                 if (["png", "jpeg", "gif", "webp"].indexOf(imageKind) < 0)
                     imageError = qsTr("Not a PNG, JPEG, GIF or WebP image.")
                 else if (imageSize > imageMaxBytes)
@@ -361,9 +361,9 @@ ColumnLayout {
                     asynchronous: true
                     cache: false
                     sourceSize.width: 720
-                    onStatusChanged: console.log("image preview: status=" + status + " src=" + String(source).substring(0, 22) + " len=" + String(source).length)
-                    source: d.imageDataUrl.length ? d.imageDataUrl
-                            : (d.imagePath.length ? (d.imagePath.indexOf("/") === 0 ? "file://" : "file:///") + d.imagePath : "")
+                    // Only the cached copy inside the plugin folder: Basecamp's
+                    // sandbox blocks file:// anywhere else, and data: URLs.
+                    source: d.imageDataUrl
                 }
                 LogosText {
                     Accessible.name: text

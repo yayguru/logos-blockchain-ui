@@ -225,6 +225,9 @@ class BlockchainBackend
     // Size and image type of a local file, for the inscription picker
     // (ui_qml cannot stat files). { size, kind: png|jpeg|gif|webp|bmp|other }
     SLOT(QVariantMap inspectFile(QString path))
+    // windows.13: an image inscription (hex) written to a small cache inside the
+    // plugin folder, the only place the Basecamp sandbox lets QML load images from.
+    SLOT(QVariantMap imagePreviewFromHex(QString hex))
     // Deletes ONLY the chain database folder of the current config, with the
     // node stopped, and only if every file in it is a RocksDB file. Never the
     // config folder, never keystore/config/key files.

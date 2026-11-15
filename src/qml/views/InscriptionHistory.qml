@@ -32,7 +32,7 @@ LogosFrame {
     readonly property int count: items.count
     readonly property string statusText: d.status
     readonly property bool busy: d.busy
-    function itemText(i) { var r = items.get(i); return r ? (r.slot + " " + r.tx.slice(0, 8) + " " + (r.image.length ? "[" + r.kind + " image " + r.size + " B]" : r.text)) : "" }
+    function itemText(i) { var r = items.get(i); return r ? (r.slot + " " + r.tx.slice(0, 8) + " " + (r.kind.length ? "[" + r.kind + " image " + r.size + " B" + (r.image.length ? ", shown" : "") + "]" : r.text)) : "" }
 
     Layout.fillWidth: true
     padding: Theme.spacing.medium
@@ -63,6 +63,19 @@ LogosFrame {
             nextId = ""
             scanned = 0
             status = ""
+        }
+
+        // Images render from a cached copy the backend writes inside the plugin
+        // folder (the only place the sandbox loads images from); the row shows
+        // its type and size until the copy is ready.
+        function loadPreview(key, hex) {
+            if (!root.chain || !root.chain.imagePreviewAvailable) return
+            root.chain.imagePreview(hex, function(ok, v) {
+                if (!ok || !v || !v.url) return
+                for (var k = 0; k < Math.min(items.count, root.maxImages); ++k) {
+                    if (items.get(k).key === key) { items.setProperty(k, "image", String(v.url)); return }
+                }
+            })
         }
 
         function trim() {
@@ -97,13 +110,15 @@ LogosFrame {
                         if (seen.indexOf("|" + key + "|") >= 0) continue
                         seen += key + "|"
                         var dec = ChainRead.hexToText(op.payload.inscription)
-                        var img = ChainRead.imageDataUrl(op.payload.inscription)
+                        var kindNow = ChainRead.imageKind(op.payload.inscription)
+                        var img = ""
                         var row = {
                             slot: slot,
                             tx: String(mt.hash || ""),
+                            key: key,
                             image: img,
-                            kind: ChainRead.imageKind(op.payload.inscription),
-                            text: (dec.printable && !img.length) ? dec.text : "",
+                            kind: kindNow,
+                            text: (dec.printable && !kindNow.length) ? dec.text : "",
                             size: dec.size,
                             hex: String(op.payload.inscription || "").slice(0, 96)
                         }
@@ -115,6 +130,8 @@ LogosFrame {
                         items.insert(at, row)
                         found++
                         trim()
+                        if (kindNow.length && at < root.maxImages)
+                            loadPreview(key, String(op.payload.inscription || ""))
                     }
                 }
             }
@@ -214,7 +231,7 @@ LogosFrame {
                     Accessible.name: qsTr("Image inscription at slot %1").arg(String(row.slot))
                 }
                 LogosText {
-                    visible: row.image.length > 0
+                    visible: row.kind.length > 0 && row.text.length === 0
                     text: qsTr("%1 image · %2 bytes").arg(row.kind.toUpperCase()).arg(row.size)
                     font.pixelSize: Theme.typography.secondaryText
                     color: Theme.palette.textSecondary
@@ -228,7 +245,7 @@ LogosFrame {
                 }
                 LogosText {
                     Layout.fillWidth: true
-                    visible: row.text.length === 0 && row.image.length === 0
+                    visible: row.text.length === 0 && row.kind.length === 0
                     wrapMode: Text.WrapAnywhere
                     text: qsTr("(%1 bytes, not text) %2…").arg(row.size).arg(row.hex)
                     font.family: Theme.typography.mono

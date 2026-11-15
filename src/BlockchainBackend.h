@@ -119,6 +119,7 @@ public slots:
     QVariantMap lezGetAccountBalance(QString accountBase58) override;
     QVariantMap powSetMaxThreads(QString maxThreads) override;
     QVariantMap inspectFile(QString path) override;
+    QVariantMap imagePreviewFromHex(QString hex) override;
     QVariantMap resetDatabase() override;
     QVariantMap lezAccount() override;
     QVariantMap lezCreateAccount() override;
@@ -153,6 +154,10 @@ private:
     void adoptRunningNode();
     bool m_moduleAutostart = false; // last known module autostart flag (set/get)
     QString m_lezRpcUrl = QStringLiteral("https://testnet.lez.logos.co/");
+    // The plugin folder from the host (setModuleContext). Image previews are
+    // cached under it because the QML sandbox only loads files from there.
+    QString m_modulePath;
+    [[nodiscard]] QString cacheImageBytes(const QByteArray& bytes, const QString& kind);
     QNetworkAccessManager* m_net = nullptr;
     void fetchBalancesForAccounts(const QStringList& list);
     // Re-reads every tracked balance, throttled. Without this walletFunded is a

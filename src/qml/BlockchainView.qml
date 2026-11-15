@@ -396,6 +396,8 @@ Rectangle {
         // File size + image type (windows.13); ui_qml cannot stat files.
         readonly property bool inspectAvailable: !!(root.backend && typeof root.backend.inspectFile === "function")
         function inspectFile(path, cb) { call(function() { return root.backend.inspectFile(path) }, cb) }
+        readonly property bool imagePreviewAvailable: !!(root.backend && typeof root.backend.imagePreviewFromHex === "function")
+        function imagePreview(hex, cb) { call(function() { return root.backend.imagePreviewFromHex(hex) }, cb) }
     }
 
     // Node status. Owns its own timers, backoff, sync debounce and progress
