@@ -133,7 +133,8 @@ ColumnLayout {
                 Layout.fillWidth: true
                 wrapMode: Text.WordWrap
                 color: Theme.palette.textSecondary
-                text: qsTr("A channel withdraw releases deposited notes back to regular spendable notes. You will see the fee first; nothing is sent until you confirm.")
+                Accessible.name: text
+                text: qsTr("Channel Withdraw takes notes back out of a channel (see Channel Deposit). Each note returns, at its full value, to the wallet that deposited it. Only the holder of the channel's key can sign this: for your own channel that is your channel key file (inscribe_key.json); a channel run by an app, such as LEZ, releases notes from its side. You will see the fee first; nothing is sent until you confirm.")
             }
 
             LogosText { text: qsTr("Channel key file"); color: Theme.palette.text }

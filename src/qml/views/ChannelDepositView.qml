@@ -295,6 +295,16 @@ ColumnLayout {
         reasonSeverity: root.nodeOffSeverity
     }
 
+    // Plain explanation first: "channel deposit" means nothing to most users.
+    LogosText {
+        objectName: "channelDepositExplainer"
+        Layout.fillWidth: true
+        wrapMode: Text.WordWrap
+        color: Theme.palette.textSecondary
+        Accessible.name: text
+        text: qsTr("A channel is an app's own lane on the chain (for example the LEZ bridge, or your own inscription channel), controlled by whoever holds its channel key. A deposit locks notes into that channel so the app can use them; LEZ credits the same amount on its side. The notes you select are used up in full: their whole value goes into the channel, and the fee is paid separately from the funding account. They come back only through Channel Withdraw, signed with that channel's key, and return to the wallet that deposited them. To bridge tokens to LEZ, the LEZ Bridge page is simpler.")
+    }
+
     // ---- Header / step indicator ----
     RowLayout {
         Layout.fillWidth: true

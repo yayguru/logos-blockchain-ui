@@ -19,6 +19,12 @@ LogosFrame {
     property var chain: null
     property bool nodeRunning: false
     property int scanBlocks: 100
+    // Bounds, so scanning months of a busy channel cannot grow memory without
+    // limit: at most maxRows rows are kept (newest first; older ones drop off),
+    // and only the newest maxImages keep their decoded picture (an image can be
+    // up to 1.75 MiB on chain, ~2.4 MB as a data URL).
+    property int maxRows: 500
+    property int maxImages: 24
 
     signal copyToClipboard(string text)
 
@@ -59,6 +65,19 @@ LogosFrame {
             status = ""
         }
 
+        function trim() {
+            while (items.count > root.maxRows)
+                items.remove(items.count - 1)
+            for (var k = root.maxImages; k < items.count; ++k) {
+                var r = items.get(k)
+                if (r.image.length) {
+                    items.setProperty(k, "image", "")
+                    items.setProperty(k, "text", qsTr("[%1 image, %2 bytes; only the newest %3 images are shown]")
+                                      .arg(String(r.kind).toUpperCase()).arg(r.size).arg(root.maxImages))
+                }
+            }
+        }
+
         function addFrom(blocks) {
             var c = cid()
             var found = 0
@@ -95,6 +114,7 @@ LogosFrame {
                         }
                         items.insert(at, row)
                         found++
+                        trim()
                     }
                 }
             }
