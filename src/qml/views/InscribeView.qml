@@ -101,12 +101,14 @@ ColumnLayout {
         property string imageKind: ""
         property real imageSize: -1
         property string imageError: ""
+        property string imageDataUrl: ""
         readonly property int imageMaxBytes: 512 * 1024
         function pickImage(path) {
             imagePath = path
             imageKind = ""
             imageSize = -1
             imageError = ""
+            imageDataUrl = ""
             estimatedFee = ""
             if (!root.chain || !root.chain.inspectAvailable) {
                 imageError = qsTr("This backend cannot check image files; update the app.")
@@ -116,6 +118,7 @@ ColumnLayout {
                 if (!ok) { imageError = String(v); return }
                 imageKind = String(v.kind || "")
                 imageSize = Number(v.size || 0)
+                imageDataUrl = String(v.dataUrl || "")
                 if (["png", "jpeg", "gif", "webp"].indexOf(imageKind) < 0)
                     imageError = qsTr("Not a PNG, JPEG, GIF or WebP image.")
                 else if (imageSize > imageMaxBytes)
@@ -358,7 +361,8 @@ ColumnLayout {
                     asynchronous: true
                     cache: false
                     sourceSize.width: 720
-                    source: d.imagePath.length ? (d.imagePath.indexOf("/") === 0 ? "file://" : "file:///") + d.imagePath : ""
+                    source: d.imageDataUrl.length ? d.imageDataUrl
+                            : (d.imagePath.length ? (d.imagePath.indexOf("/") === 0 ? "file://" : "file:///") + d.imagePath : "")
                 }
                 LogosText {
                     Accessible.name: text

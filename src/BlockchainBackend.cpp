@@ -3848,6 +3848,21 @@ QVariantMap BlockchainBackend::inspectFile(QString path)
     QVariantMap out;
     out.insert(QStringLiteral("size"), fi.size());
     out.insert(QStringLiteral("kind"), kind);
+    // A data: URL for the preview. The UI host does not load file:// images
+    // (the preview showed "no preview" for a valid PNG), and data: is also what
+    // the inscription history renders with, so the preview proves that path.
+    static const QHash<QString, QString> mime{
+        { QStringLiteral("png"), QStringLiteral("image/png") },
+        { QStringLiteral("jpeg"), QStringLiteral("image/jpeg") },
+        { QStringLiteral("gif"), QStringLiteral("image/gif") },
+        { QStringLiteral("webp"), QStringLiteral("image/webp") },
+        { QStringLiteral("bmp"), QStringLiteral("image/bmp") } };
+    if (mime.contains(kind) && fi.size() > 0 && fi.size() <= 2 * 1024 * 1024) {
+        f.seek(0);
+        const QByteArray bytes = f.readAll();
+        out.insert(QStringLiteral("dataUrl"), QStringLiteral("data:%1;base64,%2")
+                       .arg(mime.value(kind), QString::fromLatin1(bytes.toBase64())));
+    }
     out.insert(QStringLiteral("path"), QDir::toNativeSeparators(fi.absoluteFilePath()));
     return result::toVariantMap(LogosResult{true, out, QVariant()});
 }
