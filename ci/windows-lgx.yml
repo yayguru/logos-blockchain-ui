@@ -1,0 +1,76 @@
+# Unofficial Windows x86_64 build (yayguru fork). Builds the signed .lgx that
+# Basecamp installs. Cross-compiled with Nix (mingw); Qt for mingw is not in any
+# public binary cache, so the first run builds qtbase/qtdeclarative (hours) and
+# the Nix store is cached for the next runs.
+name: windows-lgx
+
+on:
+  workflow_dispatch:
+  push:
+    branches: [windows-x86_64]
+    paths-ignore: ['**.md']
+
+permissions:
+  contents: read
+
+concurrency:
+  group: windows-lgx-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  build:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 350
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Free disk space
+        run: |
+          sudo rm -rf /usr/share/dotnet /usr/local/lib/android /opt/ghc /opt/hostedtoolcache/CodeQL /usr/local/share/boost
+          df -h /
+
+      - uses: cachix/install-nix-action@v31
+        with:
+          extra_nix_config: |
+            experimental-features = nix-command flakes
+            accept-flake-config = true
+
+      - name: Restore the Nix store
+        uses: nix-community/cache-nix-action@v6
+        with:
+          primary-key: nix-win-${{ hashFiles('flake.lock') }}
+          restore-prefixes-first-match: nix-win-
+          gc-max-store-size-linux: 9G
+          purge: false
+
+      - name: Linux compile check (UI backend)
+        run: nix build .#packages.x86_64-linux.lib -L --out-link result-linux
+
+      - name: Build the Windows .lgx
+        run: |
+          nix build .#packages.x86_64-windows.lgx-portable -L --out-link result-win
+          mkdir -p out
+          cp result-win/*.lgx out/blockchain_ui-0.3.5-windows-x86_64.lgx
+          chmod u+w out/*.lgx
+
+      - name: Sign with the repo secret (skipped when it is not set)
+        env:
+          LGX_SIGNING_JWK: ${{ secrets.LGX_SIGNING_JWK }}
+        run: |
+          if [ -z "$LGX_SIGNING_JWK" ]; then echo "No LGX_SIGNING_JWK secret: leaving the package unsigned."; exit 0; fi
+          umask 077
+          key="$(mktemp)"
+          printf '%s' "$LGX_SIGNING_JWK" > "$key"
+          LGX="nix run github:logos-co/logos-package/1eae01c2972dbd42cd11ad4c64a243ca45be8099#lgx --"
+          $LGX sign out/*.lgx --key "$key" --name yayguru --url https://github.com/yayguru > /dev/null
+          rm -f "$key"
+          $LGX verify out/*.lgx
+
+      - name: Checksums
+        run: cd out && sha256sum *.lgx | tee SHA256SUMS
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: blockchain_ui-0.3.5-windows-x86_64
+          path: out/
+          if-no-files-found: error
