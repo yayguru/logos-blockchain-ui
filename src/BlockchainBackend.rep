@@ -208,6 +208,15 @@ class BlockchainBackend
     SLOT(QVariantMap sdpPostDeclaration(QString requestJson))
     SLOT(QVariantMap sdpPostActivity(QString requestJson))
     SLOT(QVariantMap sdpPostWithdrawal(QString requestJson))
+    // Node autostart, kept by the module (windows.11+): with it on, unloading
+    // this UI leaves the node running, and loading the module restarts the
+    // node with the config it last ran with. Answers the module's state.
+    SLOT(QVariantMap setNodeAutostart(bool enabled))
+    SLOT(QVariantMap getNodeAutostart())
+    // A LEZ account balance from the public LEZ JSON-RPC (getAccountBalance).
+    // Here because ui_qml may not use the network. Read-only, one fixed method
+    // and URL (metadata lez_rpc_url), so QML cannot use it as a proxy.
+    SLOT(QVariantMap lezGetAccountBalance(QString accountBase58))
     // A stop the user asked for was refused. Deliberately a signal, not a state:
     // the node is still running and still catching up, so the status must keep
     // saying so — this is a one-off "that didn't work, try again", not a mode

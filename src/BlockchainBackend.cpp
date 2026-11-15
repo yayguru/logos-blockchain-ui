@@ -22,6 +22,10 @@
 #include <QRegularExpression>
 #include <QStandardPaths>
 #include <QJsonArray>
+#include <QEventLoop>
+#include <QNetworkAccessManager>
+#include <QNetworkReply>
+#include <QNetworkRequest>
 #include <QJsonDocument>
 #include <QJsonObject>
 #include <QDirIterator>
@@ -1195,7 +1199,113 @@ BlockchainBackend::BlockchainBackend(LogosAPI* logosAPI, QObject* parent)
     }
 
 
+    // Tells an app exit apart from this plugin being unloaded (a UI reinstall),
+    // which is all the destructor needs to know.
+    if (QCoreApplication::instance())
+        connect(QCoreApplication::instance(), &QCoreApplication::aboutToQuit, this,
+                [this]() { m_appQuitting = true; });
+    QTimer::singleShot(0, this, &BlockchainBackend::adoptRunningNode);
+
     qDebug() << "BlockchainBackend: initialized";
+}
+
+void BlockchainBackend::adoptRunningNode()
+{
+    if (!m_blockchainClient || status() != NotStarted || !moduleIsAlive())
+        return;
+    QPointer<BlockchainBackend> self(this);
+    m_blockchainClient->invokeRemoteMethodAsync(
+        BLOCKCHAIN_MODULE_NAME, QStringLiteral("node_status"), QVariantList{},
+        [self](QVariant reply) {
+            if (!self || self->status() != NotStarted)
+                return;
+            const LogosResult r = result::toLogosResult(reply);
+            if (!r.success)
+                return; // a module without node_status: nothing to adopt
+            const QJsonObject o = QJsonDocument::fromJson(r.value.toString().toUtf8()).object();
+            if (!o.value(QStringLiteral("running")).toBool())
+                return;
+            const QString cfg = o.value(QStringLiteral("config_path")).toString();
+            qDebug() << "BlockchainBackend: the node kept running across the UI reload; adopting it" << cfg;
+            if (self->userConfig().isEmpty() && !cfg.isEmpty())
+                self->setUserConfig(cfg);
+            self->setNodeModuleReachable(true);
+            self->setLastErrorMessage(QString());
+            self->setConfigState(ConfigOk);
+            self->setStatus(Running);
+            QTimer::singleShot(500, self.data(), [self]() {
+                if (!self)
+                    return;
+                self->refreshAccounts();
+                self->seedAutoClaimFromConfig();
+            });
+        },
+        Timeout(5000));
+}
+
+QVariantMap BlockchainBackend::setNodeAutostart(bool enabled)
+{
+    return invokeJsonMethod(QStringLiteral("autostart_set"),
+                            QVariantList{ enabled ? QStringLiteral("{\"enabled\":true}")
+                                                  : QStringLiteral("{\"enabled\":false}") });
+}
+
+QVariantMap BlockchainBackend::getNodeAutostart()
+{
+    return invokeJsonMethod(QStringLiteral("autostart_get"), QVariantList{});
+}
+
+QVariantMap BlockchainBackend::lezGetAccountBalance(QString accountBase58)
+{
+    static const QRegularExpression base58(QStringLiteral("^[1-9A-HJ-NP-Za-km-z]{32,64}$"));
+    const QString account = accountBase58.trimmed();
+    if (!base58.match(account).hasMatch())
+        return result::toVariantMap(result::err(QStringLiteral("That is not a LEZ account (base58).")));
+    const QUrl url(m_lezRpcUrl);
+    if (url.scheme() != QLatin1String("https"))
+        return result::toVariantMap(result::err(QStringLiteral("The LEZ RPC URL must be https.")));
+    if (!m_net)
+        m_net = new QNetworkAccessManager(this);
+
+    QNetworkRequest req(url);
+    req.setHeader(QNetworkRequest::ContentTypeHeader, QStringLiteral("application/json"));
+    req.setHeader(QNetworkRequest::UserAgentHeader, QStringLiteral("logos-blockchain-ui"));
+    req.setTransferTimeout(15000);
+    const QJsonObject body{ { QStringLiteral("jsonrpc"), QStringLiteral("2.0") },
+                            { QStringLiteral("id"), 1 },
+                            { QStringLiteral("method"), QStringLiteral("getAccountBalance") },
+                            { QStringLiteral("params"), QJsonArray{ account } } };
+    QNetworkReply* reply = m_net->post(req, QJsonDocument(body).toJson(QJsonDocument::Compact));
+    QEventLoop loop;
+    connect(reply, &QNetworkReply::finished, &loop, &QEventLoop::quit);
+    QTimer::singleShot(16000, &loop, &QEventLoop::quit);
+    if (!reply->isFinished())
+        loop.exec();
+    if (!reply->isFinished()) {
+        reply->abort();
+        reply->deleteLater();
+        return result::toVariantMap(result::err(QStringLiteral("The LEZ RPC did not answer in time.")));
+    }
+    const QByteArray data = reply->readAll();
+    const QString netError = reply->error() == QNetworkReply::NoError ? QString() : reply->errorString();
+    reply->deleteLater();
+    if (!netError.isEmpty())
+        return result::toVariantMap(result::err(QStringLiteral("LEZ RPC: ") + netError));
+    const QJsonObject o = QJsonDocument::fromJson(data).object();
+    if (o.contains(QStringLiteral("error")))
+        return result::toVariantMap(result::err(QStringLiteral("LEZ RPC: ")
+            + QString::fromUtf8(QJsonDocument(o.value(QStringLiteral("error")).toObject()).toJson(QJsonDocument::Compact))));
+    const QJsonValue v = o.value(QStringLiteral("result"));
+    QString out;
+    if (v.isString())
+        out = v.toString();
+    else if (v.isDouble())
+        out = QString::number(static_cast<qint64>(v.toDouble()));
+    else if (v.isObject() && v.toObject().contains(QStringLiteral("balance")))
+        out = v.toObject().value(QStringLiteral("balance")).toVariant().toString();
+    if (out.isEmpty())
+        return result::toVariantMap(result::err(QStringLiteral("LEZ RPC: unexpected answer")));
+    return result::toVariantMap(LogosResult{true, QVariant(out), QVariant()});
 }
 
 BlockchainBackend::~BlockchainBackend()
@@ -1205,15 +1315,35 @@ BlockchainBackend::~BlockchainBackend()
     if (!m_blockchainClient || !moduleIsAlive())
         return;
 
+    // A UI unload (reinstall, update) is not an app exit. A module that keeps
+    // autostart intent (windows.11+) is left running and the next UI adopts
+    // the node; its own destructor still stops it when its process ends.
+    const bool appExit = m_appQuitting || QCoreApplication::closingDown();
+    if (!appExit) {
+        const LogosResult autostart = result::toLogosResult(m_blockchainClient->invokeRemoteMethod(
+            BLOCKCHAIN_MODULE_NAME, QStringLiteral("autostart_get"), QVariantList{}, Timeout(3000)));
+        if (autostart.success
+                && QJsonDocument::fromJson(autostart.value.toString().toUtf8()).object()
+                       .value(QStringLiteral("enabled")).toBool()) {
+            qDebug() << "BlockchainBackend: UI unloaded; the node keeps running (autostart on)";
+            return;
+        }
+    }
+
     // Synchronous, unlike stopBlockchain(). This is teardown: there is nobody
     // left to deliver a callback to, and the object is already dying, so the
     // asynchronous version's QPointer guard drops the reply and the process can
     // exit with the request still in flight — leaving the node running after the
     // app is gone. Bounded, because a wedged module must not hold up shutdown.
-    m_blockchainClient->invokeRemoteMethod(BLOCKCHAIN_MODULE_NAME,
-                                           QStringLiteral("stop"),
-                                           QVariantList{},
-                                           Timeout(kShutdownStopTimeoutMs));
+    // shutdown() keeps the autostart intent, so the next app start resumes
+    // this node. A module without it gets the old stop().
+    const LogosResult shut = result::toLogosResult(m_blockchainClient->invokeRemoteMethod(
+        BLOCKCHAIN_MODULE_NAME, QStringLiteral("shutdown"), QVariantList{}, Timeout(kShutdownStopTimeoutMs)));
+    if (!shut.success)
+        m_blockchainClient->invokeRemoteMethod(BLOCKCHAIN_MODULE_NAME,
+                                               QStringLiteral("stop"),
+                                               QVariantList{},
+                                               Timeout(kShutdownStopTimeoutMs));
 }
 
 QVariantMap BlockchainBackend::claimLeaderRewards()
@@ -1454,6 +1584,10 @@ void BlockchainBackend::loadBootstrapPeers(const QVariantMap& metadata)
 // typo someone wants to hear about.
 void BlockchainBackend::loadLezChannelId(const QVariantMap& metadata)
 {
+    const QString rpc = metadata.value(QStringLiteral("lez_rpc_url")).toString().trimmed();
+    if (rpc.startsWith(QLatin1String("https://")))
+        m_lezRpcUrl = rpc;
+
     const QString raw =
         metadata.value(QStringLiteral("lez_channel_id")).toString().trimmed();
     if (raw.isEmpty())

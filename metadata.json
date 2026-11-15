@@ -8,20 +8,37 @@
   "main": "blockchain_ui_plugin",
   "icon": "src/icons/blockchain.png",
   "view": "qml/BlockchainView.qml",
-  "dependencies": ["blockchain_module"],
+  "dependencies": [
+    "blockchain_module"
+  ],
   "bootstrap_peers": [],
   "lez_channel_id": "0101010101010101010101010101010101010101010101010101010101010101",
   "nix": {
     "packages": {
       "build": [],
-      "runtime": ["qt6.qtdeclarative", "zstd", "abseil-cpp"]
+      "runtime": [
+        "qt6.qtdeclarative",
+        "zstd",
+        "abseil-cpp"
+      ]
     },
-    "external_libraries": [{ "name": "process_stats" }],
+    "external_libraries": [
+      {
+        "name": "process_stats"
+      }
+    ],
     "cmake": {
-      "find_packages": ["Qt6Gui"],
+      "find_packages": [
+        "Qt6Gui",
+        "Qt6Network"
+      ],
       "extra_sources": [],
       "extra_include_dirs": [],
-      "extra_link_libraries": ["Qt6::Gui"]
+      "extra_link_libraries": [
+        "Qt6::Gui",
+        "Qt6::Network"
+      ]
     }
-  }
+  },
+  "lez_rpc_url": "https://testnet.lez.logos.co/"
 }

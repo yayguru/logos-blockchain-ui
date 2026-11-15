@@ -10,13 +10,15 @@ import "ChainRead.js" as ChainRead
 
 // Follows bridge deposits from "sent" to "credited on LEZ":
 //   sent → in an L1 block → final on L1 (LIB passed it) → credited on LEZ.
-// Read-only: the local node answers the L1 part, the public LEZ JSON-RPC
-// answers the balance. The list survives restarts and UI reinstalls.
+// Read-only: the local node answers the L1 part. When the backend offers
+// lezGetAccountBalance (windows.11+), the public LEZ JSON-RPC answers the
+// balance and "credited" is detected on its own; otherwise it is marked by hand.
+// The list survives restarts and UI reinstalls.
 LogosFrame {
     id: root
     objectName: "lezDepositTracker"
 
-    // { info(cb), block(id, cb) } from BlockchainView.
+    // { info(cb), block(id, cb), lezAvailable, lezBalance(account, cb) } from BlockchainView.
     property var chain: null
     property string lezChannelId: ""
     property bool nodeRunning: false
@@ -48,6 +50,8 @@ LogosFrame {
                 credited: false, creditedMs: 0, note: "" })
     }
 
+    readonly property bool lezAuto: !!(root.chain && root.chain.lezAvailable)
+
     function trackSent(tx, amount, recipient, channelId, sentSlot) {
         d.add({ tx: String(tx), amount: String(amount), recipient: String(recipient || ""),
                 channel: String(channelId || "").toLowerCase(), sentMs: Date.now(), sentSlot: sentSlot,
@@ -60,9 +64,19 @@ LogosFrame {
         root.chain.info(function(ok, v) {
             var inf = ok ? ChainRead.parseInfo(v) : null
             var slot = inf ? inf.slot : -1
-            d.add({ tx: String(tx), amount: String(amountLepta), recipient: String(recipient || ""),
-                    channel: String(channelId || "").toLowerCase(), sentMs: Date.now(), sentSlot: slot,
-                    inclSlot: -1, baseline: -1, balance: -1, credited: false, creditedMs: 0, note: "" })
+            var e = { tx: String(tx), amount: String(amountLepta), recipient: String(recipient || ""),
+                      channel: String(channelId || "").toLowerCase(), sentMs: Date.now(), sentSlot: slot,
+                      inclSlot: -1, baseline: -1, balance: -1, credited: false, creditedMs: 0, note: "" }
+            // The balance before the credit, read now: LEZ cannot credit a
+            // deposit before its L1 block is final, hours from now.
+            if (root.lezAuto && d.isLez(e)) {
+                root.chain.lezBalance(e.recipient, function(ok2, bal) {
+                    if (ok2 && /^[0-9]+$/.test(String(bal).trim())) { e.baseline = Number(bal); e.balance = e.baseline }
+                    d.add(e)
+                })
+            } else {
+                d.add(e)
+            }
         })
     }
 
@@ -74,6 +88,7 @@ LogosFrame {
         property int tip: -1
         property string tipId: ""
         property string status: ""
+        property string lezError: ""
 
         function load() {
             try { entries = JSON.parse(store.entriesJson) || [] } catch (e) { entries = [] }
@@ -106,14 +121,26 @@ LogosFrame {
             if (e.inclSlot >= 0) return 1
             return 0
         }
+        function balanceText(e) {
+            if (e.balance < 0) return ""
+            return e.baseline >= 0
+                   ? qsTr(" LEZ balance %1 (was %2 before the deposit).").arg(String(e.balance)).arg(String(e.baseline))
+                   : qsTr(" LEZ balance %1.").arg(String(e.balance))
+        }
         function text(e) {
             var s = stage(e)
             if (s === 3)
-                return qsTr("Marked as credited on LEZ.")
+                return e.autoCredited
+                       ? qsTr("Credited on LEZ: the balance went from %1 to %2.").arg(String(e.baseline)).arg(String(e.balance))
+                       : qsTr("Marked as credited on LEZ.")
             if (s === 2)
                 return isLez(e)
-                       ? qsTr("Final on L1: LIB passed slot %1. LEZ can credit it now. Basecamp does not let UI plugins reach the internet, so check the LEZ balance in a LEZ wallet and mark it here.")
-                             .arg(String(e.inclSlot))
+                       ? (root.lezAuto
+                          ? qsTr("Final on L1: LIB passed slot %1. Waiting for LEZ to credit it.").arg(String(e.inclSlot))
+                            + balanceText(e)
+                            + (e.baseline < 0 ? qsTr(" The balance before the deposit is unknown, so mark it yourself once it has arrived.") : "")
+                          : qsTr("Final on L1: LIB passed slot %1. LEZ can credit it now. This build cannot read LEZ, so check the balance in a LEZ wallet and mark it here.")
+                             .arg(String(e.inclSlot)))
                        : qsTr("Final on L1: LIB passed slot %1. The deposit sits in channel %2.")
                              .arg(String(e.inclSlot)).arg(e.channel.slice(0, 8) + "…")
             if (s === 1) {
@@ -158,13 +185,34 @@ LogosFrame {
                 status = lib >= 0
                          ? qsTr("Checked %1. LIB slot %2, tip slot %3.")
                                .arg(new Date().toLocaleTimeString(Qt.locale(), Locale.ShortFormat)).arg(String(lib)).arg(String(tip))
+                           + (lezError.length ? qsTr(" LEZ RPC: %1").arg(lezError) : "")
                          : qsTr("Could not read the chain state from the node.")
                 save()
                 return
             }
             var e = entries[i]
             if (e.credited) { step(i + 1); return }
-            findInclusion(e, function() { step(i + 1) })
+            findInclusion(e, function() { checkLez(e, function() { step(i + 1) }) })
+        }
+        // The LEZ side, through the backend (the QML sandbox has no network).
+        // Credited once the balance has grown by at least the deposit.
+        function checkLez(e, next) {
+            if (!root.lezAuto || !isLez(e)) { next(); return }
+            root.chain.lezBalance(e.recipient, function(ok, bal) {
+                var v = ok && /^[0-9]+$/.test(String(bal).trim()) ? Number(bal) : -1
+                if (v < 0) { lezError = ok ? qsTr("unexpected answer") : String(bal); next(); return }
+                lezError = ""
+                e.balance = v
+                // Before finality nothing can have been credited yet, so this
+                // reading is a fair "before".
+                if (e.baseline < 0 && stage(e) < 2) e.baseline = v
+                if (e.baseline >= 0 && stage(e) >= 2 && v >= e.baseline + Number(e.amount)) {
+                    e.credited = true
+                    e.autoCredited = true
+                    e.creditedMs = Date.now()
+                }
+                next()
+            })
         }
         // A deposit sent from here: walk back from the tip (at most 300 blocks)
         // to the slot it was sent at, looking for its hash.
@@ -219,7 +267,9 @@ LogosFrame {
         LogosText {
             Layout.fillWidth: true
             wrapMode: Text.WordWrap
-            text: qsTr("Each deposit goes: sent → in an L1 block → final on L1 → credited on LEZ. Finality currently lags many hours. Checked every 2 minutes while this page is open; reads only, through your node.")
+            text: root.lezAuto
+                  ? qsTr("Each deposit goes: sent → in an L1 block → final on L1 → credited on LEZ. Finality currently lags many hours. Checked every 2 minutes while this page is open; reads only: L1 through your node, LEZ balances through the public LEZ RPC.")
+                  : qsTr("Each deposit goes: sent → in an L1 block → final on L1 → credited on LEZ. Finality currently lags many hours. Checked every 2 minutes while this page is open; reads only, through your node.")
             font.pixelSize: Theme.typography.secondaryText
             color: Theme.palette.textSecondary
         }
@@ -311,7 +361,8 @@ LogosFrame {
             LogosTextField { id: tTx; objectName: "lezTrackTx"; Layout.fillWidth: true; Layout.columnSpan: 2; placeholderText: qsTr("Deposit tx hash (64 hex)") }
             LogosTextField { id: tAmt; objectName: "lezTrackAmount"; Layout.fillWidth: true; placeholderText: qsTr("Amount in base units") }
             LogosTextField { id: tAcc; objectName: "lezTrackAccount"; Layout.fillWidth: true; placeholderText: qsTr("LEZ account (base58)") }
-            LogosTextField { id: tSlot; objectName: "lezTrackSlot"; Layout.fillWidth: true; Layout.columnSpan: 2; placeholderText: qsTr("L1 slot of the block (Explorer shows it)") }
+            LogosTextField { id: tSlot; objectName: "lezTrackSlot"; Layout.fillWidth: true; Layout.columnSpan: root.lezAuto ? 1 : 2; placeholderText: qsTr("L1 slot of the block (Explorer shows it)") }
+            LogosTextField { id: tBase; objectName: "lezTrackBaseline"; visible: root.lezAuto; Layout.fillWidth: true; placeholderText: qsTr("LEZ balance before (optional)") }
         }
         LogosButton {
             objectName: "lezTrackAdd"
@@ -320,14 +371,15 @@ LogosFrame {
             enabled: /^[0-9a-fA-F]{64}$/.test(tTx.text.trim()) && /^[0-9]+$/.test(tAmt.text.trim())
                      && /^[1-9A-HJ-NP-Za-km-z]{32,44}$/.test(tAcc.text.trim())
                      && (tSlot.text.trim() === "" || /^[0-9]+$/.test(tSlot.text.trim()))
+                     && (tBase.text.trim() === "" || /^[0-9]+$/.test(tBase.text.trim()))
             onClicked: {
                 var s = tSlot.text.trim()
                 d.add({ tx: tTx.text.trim().toLowerCase(), amount: tAmt.text.trim(), recipient: tAcc.text.trim(),
                         channel: root.lezChannelId.toLowerCase(), sentMs: Date.now(),
                         sentSlot: -1, inclSlot: s.length ? Number(s) : -1,
-                        baseline: -1,
+                        baseline: root.lezAuto && tBase.text.trim().length ? Number(tBase.text.trim()) : -1,
                         balance: -1, credited: false, creditedMs: 0, note: s.length ? "" : qsTr("Slot unknown. Enter the L1 slot to follow finality.") })
-                tTx.text = ""; tAmt.text = ""; tSlot.text = ""
+                tTx.text = ""; tAmt.text = ""; tSlot.text = ""; tBase.text = ""
             }
         }
     }

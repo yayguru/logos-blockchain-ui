@@ -30,7 +30,7 @@ Rectangle {
     // Never-connected and lost-the-connection look identical in `status`, but
     // one is a fresh launch and the other is a node whose status is now stale.
     property bool everReady: false
-    onReadyChanged: if (root.ready) root.everReady = true
+    onReadyChanged: if (root.ready) { root.everReady = true; resume.syncModuleAutostart() }
 
     Connections {
         target: logos
@@ -266,24 +266,14 @@ Rectangle {
             && (root.backend.status === BlockchainBackend.NotStarted
                 || root.backend.status === BlockchainBackend.Stopped)
 
-        function nodeApiAlive(cb) {
-            var xhr = new XMLHttpRequest()
-            var done = false
-            xhr.onreadystatechange = function() {
-                if (xhr.readyState === XMLHttpRequest.DONE && !done) {
-                    done = true
-                    cb(xhr.status >= 200 && xhr.status < 500)
-                }
-            }
-            xhr.timeout = 3000
-            xhr.ontimeout = function() { if (!done) { done = true; cb(false) } }
-            xhr.onerror = function() { if (!done) { done = true; cb(false) } }
-            try {
-                xhr.open("GET", "http://127.0.0.1:8080/cryptarchia/info")
-                xhr.send()
-            } catch (e) {
-                if (!done) { done = true; cb(false) }
-            }
+        // Hands the same switch to the module (windows.11+), which then keeps
+        // the node across UI reinstalls and restarts it when it is loaded.
+        function syncModuleAutostart() {
+            if (!root.backend || typeof root.backend.setNodeAutostart !== "function")
+                return
+            logos.watch(root.backend.setNodeAutostart(resumeStore.enabled),
+                function(result) { if (!result.success) console.warn("autostart_set:", result.error) },
+                function(error) { console.warn("autostart_set:", error) })
         }
 
         function tick() {
@@ -310,17 +300,13 @@ Rectangle {
             if (Date.now() - resumeStore.lastAttemptMs < 120000)
                 return
             nodeAttempted = true
-            nodeApiAlive(function(alive) {
-                if (alive) {
-                    resume.note = qsTr("A node already answers on 127.0.0.1:8080; not starting another one.")
-                    return
-                }
-                if (!resume.statusIdle || !root.backend)
-                    return
-                resumeStore.lastAttemptMs = Date.now()
-                resume.note = qsTr("Resuming the node after the app or UI was restarted…")
-                root.backend.startBlockchain()
-            })
+            // No probe of 127.0.0.1:8080 here: Basecamp's sandbox blocks network
+            // access from ui_qml. The backend adopts a node the module kept
+            // running (status Running, so this never gets here), and the
+            // module's start() is a no-op for the config it already runs.
+            resumeStore.lastAttemptMs = Date.now()
+            resume.note = qsTr("Resuming the node after the app or UI was restarted…")
+            root.backend.startBlockchain()
         }
 
         function tickMining() {
@@ -351,6 +337,10 @@ Rectangle {
         repeat: true
         running: root.nodeRunning && !resume.miningAttempted && resumeStore.enabled && resumeStore.miningWanted
         onTriggered: resume.tickMining()
+    }
+    Connections {
+        target: resumeStore
+        function onEnabledChanged() { resume.syncModuleAutostart() }
     }
     Connections {
         target: root.backend
@@ -386,6 +376,10 @@ Rectangle {
         }
         function info(cb) { call(function() { return root.backend.getCryptarchiaInfo() }, cb) }
         function block(id, cb) { call(function() { return root.backend.getBlock(id) }, cb) }
+        // LEZ balances through the backend (windows.11+): C++ may use the
+        // network, ui_qml may not. Absent on older backends.
+        readonly property bool lezAvailable: !!(root.backend && typeof root.backend.lezGetAccountBalance === "function")
+        function lezBalance(account, cb) { call(function() { return root.backend.lezGetAccountBalance(account) }, cb) }
     }
 
     // Node status. Owns its own timers, backoff, sync debounce and progress

@@ -1,6 +1,7 @@
 #ifndef BLOCKCHAIN_BACKEND_H
 #define BLOCKCHAIN_BACKEND_H
 
+class QNetworkAccessManager;
 #include <QDateTime>
 #include <QElapsedTimer>
 #include <QHash>
@@ -113,6 +114,9 @@ public slots:
     QVariantMap sdpPostDeclaration(QString requestJson) override;
     QVariantMap sdpPostActivity(QString requestJson) override;
     QVariantMap sdpPostWithdrawal(QString requestJson) override;
+    QVariantMap setNodeAutostart(bool enabled) override;
+    QVariantMap getNodeAutostart() override;
+    QVariantMap lezGetAccountBalance(QString accountBase58) override;
     QVariantMap powStartMining() override;
     QVariantMap powStopMining() override;
     QVariantMap powClaimableRewards() override;
@@ -136,6 +140,12 @@ public:
 
 private:
     QVariantMap invokeJsonMethod(const QString& method, const QVariantList& args);
+    // A node the module kept running while this UI was reloaded: take it over
+    // instead of offering Start Node for a node that is already up.
+    void adoptRunningNode();
+    bool m_appQuitting = false;
+    QString m_lezRpcUrl = QStringLiteral("https://testnet.lez.logos.co/");
+    QNetworkAccessManager* m_net = nullptr;
     void fetchBalancesForAccounts(const QStringList& list);
     // Re-reads every tracked balance, throttled. Without this walletFunded is a
     // snapshot from node-start and the lifecycle lane never leaves "Fund your
