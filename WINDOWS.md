@@ -28,6 +28,16 @@ Free disk space: about 3 GB for the chain state, plus RAM for a node that uses a
 2. Open Basecamp, then go to **Package Manager → Install Local Package**.
 3. Install the module first, then the UI.
 
+### One-click installer (windows.12+)
+
+`Install-LogosBlockchain.cmd` (attached to the UI release, source in `windows/`) does the same steps for you:
+it installs Basecamp 0.4.0-rc.2 from the official release if it is missing (pinned sha256),
+downloads both packages and checks their sha256, puts them where Basecamp's **Reinstall** would,
+backs up any older copy to `<user dir>\backups\`, adds a *Logos Blockchain* desktop shortcut and starts Basecamp.
+Then open the Blockchain app and press **Quick start** (or *Use an existing config*).
+It never creates keys and never touches Basecamp's trusted-publisher list. Close Basecamp first.
+Options: `-UserDir <dir>`, `-ModuleLgx <file>` / `-UiLgx <file>` (local packages), `-DryRun`, `-NoLaunch`, `-NoShortcut`.
+
 ### Trust and signer note
 
 The packages are signed with the `yayguru` key:
@@ -90,8 +100,10 @@ In windows.9 they used HTTP and were blocked inside Basecamp; windows.10 fixes t
   *Sent → In an L1 block → Final on L1 → Credited on LEZ*.
   It finds the block that holds the deposit by walking back from the tip (up to 300 blocks).
   It shows how many slots are left until that block is final (LIB).
-  The UI cannot reach the LEZ RPC, so the last step is manual:
-  check the balance in a LEZ wallet, then press **Mark credited**.
+  Since windows.11 the last step is automatic: the UI backend (C++, outside the QML sandbox) asks the LEZ RPC
+  (`https://testnet.lez.logos.co/`, method `getAccountBalance`, HTTPS only, nothing else) for the account balance.
+  It records the balance when you send, and marks the deposit *Credited* once the L1 block is final
+  and the balance has grown by at least the amount. You can still press **Mark credited** yourself.
   New deposits are added automatically. To follow an older deposit, enter its tx hash, amount, LEZ account and the L1 slot.
   The list is kept in `blockchain_ui_lez_tracker.ini` and survives restarts. It only reads data and never sends anything.
 * If the channel field holds anything other than the LEZ bridge channel,
@@ -118,8 +130,13 @@ Errors are shown in plain words, with the raw node message after "Details:":
 
 ## 6. Updating the UI or module (read this)
 
-* **Installing or reinstalling the UI package stops the running node.** Basecamp unloads the old UI,
-  and the UI backend stops the node when it is torn down. The `logos_host` process stays alive.
+* **Since UI windows.12 + module windows.4, reinstalling the UI keeps the node running** when *Resume after restart* is on.
+  The new UI finds the running node and shows it as Running. (Basecamp also tears the UI down when you open another section,
+  for example Package Manager; that no longer stops the node either.) When Basecamp quits, the module stops the node.
+  With older packages, reinstalling the UI stopped the node.
+* With *Resume after restart* on, the **module** also remembers the last config and whether mining was on
+  (`autostart.json` in its module data folder). When Basecamp loads the module again it starts the node with that
+  same config and turns mining back on once the node is Online. **Stop Node** clears this.
 * Since UI `v0.3.5-windows.8` the UI has **Resume after restart** (Settings, on by default).
   It remembers that the node was running, which config it used, and whether mining was on,
   in `blockchain_ui_resume.ini` in Basecamp's config folder.
