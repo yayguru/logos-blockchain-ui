@@ -4,10 +4,10 @@
 plugins for **Logos Basecamp**. The node runs inside Basecamp: no WSL, no admin rights, no terminal.
 You get the node, PoW mining, a wallet (transfer, LEZ bridge, inscriptions) and a block explorer.
 
-> Community builds by `yayguru`, published as GitHub **prereleases**. Not official Logos releases.
+> Unofficial builds, not official Logos releases.
 > **Do not install the "blockchain" node from Basecamp's official catalog on Windows** — it has no
 > Windows version and fails with *"Package does not contain variant for platform windows-x86_64"*.
-> Always use the two yayguru files below.
+> Always use the two files below.
 
 ## 1. Download (two files)
 
@@ -36,7 +36,7 @@ section 2 for you — see [One-click installer](#one-click-installer).
 2. Basecamp → **Package Manager → Install Local Package** → pick the **module** `.lgx` → **Install**.
 3. Same again for the **UI** `.lgx`.
 4. Basecamp warns *"signed by a publisher you don't trust yet"*. That is expected: the files are signed with
-   yayguru's own key, not by Logos. Press **Install** (or **Reinstall**). You do **not** need **Trust**.
+   the maintainer's own key (shown as "yayguru"), not by Logos. Press **Install** (or **Reinstall**). You do **not** need **Trust**.
 5. If Windows Firewall asks about `logos_host.exe`, Cancel is fine; outgoing connections still work.
 
 ## 3. First start
@@ -111,7 +111,7 @@ never touches them — but **back up `keystore.yaml` first anyway** (section 4).
 
 | Symptom | Fix |
 |---|---|
-| "Package does not contain variant for platform windows-x86_64" | You installed from the official catalog. Use the yayguru `.lgx` files instead. |
+| "Package does not contain variant for platform windows-x86_64" | You installed from the official catalog. Use the `.lgx` files from the releases above instead. |
 | Install dialog picks an old file | Put the new `.lgx` in a new empty folder |
 | Node starts syncing from zero | Settings → Config must point at your existing `user_config.yaml` |
 | Stuck on *Bootstrapping* after a restart | Wait up to 1 hour (normal waiting period) |

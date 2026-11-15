@@ -1,10 +1,10 @@
 <#
 .SYNOPSIS
-  One-click setup of the Logos Blockchain node + UI (unofficial yayguru Windows build) in Logos Basecamp.
+  One-click setup of the Logos Blockchain node + UI (unofficial Windows build) in Logos Basecamp.
 
 .DESCRIPTION
   1. Installs Logos Basecamp (official logos-co setup, sha256-pinned) if it is missing.
-  2. Downloads blockchain_module and blockchain_ui (.lgx, sha256-pinned) from the yayguru prerelease.
+  2. Downloads blockchain_module and blockchain_ui (.lgx, sha256-pinned) from the GitHub release.
   3. Unpacks them into a Basecamp user directory of their own, the same layout Basecamp's
      "Install Local Package" writes. Nothing is added to Basecamp's trusted keyring.
   4. Creates a desktop shortcut and starts Basecamp with that user directory.

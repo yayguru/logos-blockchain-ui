@@ -228,7 +228,7 @@ Rectangle {
         }
     }
 
-    // ---- Auto-resume (yayguru Windows build) ----
+    // ---- Auto-resume (Windows build) ----
     // Reinstalling or updating this UI destroys BlockchainBackend, and its
     // destructor stops the node (teardown must not leave an orphan node behind
     // a closed app). Without this the node stays stopped after every update

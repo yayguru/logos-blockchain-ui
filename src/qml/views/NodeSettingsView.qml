@@ -62,7 +62,7 @@ ColumnLayout {
 
     signal startNewNodeRequested()
 
-    // Auto-resume after a Basecamp/UI restart or update (yayguru Windows build).
+    // Auto-resume after a Basecamp/UI restart or update (Windows build).
     property bool autoResume: true
     signal autoResumeToggled(bool on)
 

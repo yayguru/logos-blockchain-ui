@@ -4,10 +4,11 @@ A QML + C++ backend UI module for the [Logos](https://logos.co) platform that pr
 
 Built with [`logos-module-builder`](https://github.com/logos-co/logos-module-builder) using the `mkLogosQmlModule` pattern (QML frontend + C++ backend with Qt Remote Objects).
 
-## Windows (unofficial yayguru build) — start here
+## Unofficial Windows build — start here
 
-This fork (branch `windows-x86_64`) ships a **Windows build** of the Logos Blockchain node + app for
-Logos Basecamp. It is a community build by yayguru, not an official Logos release.
+This fork (branch `windows-x86_64`) provides an unofficial Windows build of the Logos Blockchain node and app
+for Logos Basecamp. It is not an official Logos release and is not endorsed by the Logos project.
+Maintainer: OPDE.
 
 1. Download two files: the **module** `blockchain_module-0.3.4-windows-x86_64.lgx` from the newest
    [module release](https://github.com/yayguru/logos-blockchain-module/releases) and the **UI**

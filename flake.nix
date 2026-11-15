@@ -12,7 +12,7 @@
     # (excludeSystems) is merged.
     logos-module-builder.url = "github:logos-co/logos-module-builder/feat/systems-opt-out";
     nix-bundle-lgx.url = "github:logos-co/nix-bundle-lgx";
-    # Windows-enabled build of blockchain_module 0.3.4 (yayguru fork, see its WINDOWS.md).
+    # Windows-enabled build of blockchain_module 0.3.4 (Windows fork, see its WINDOWS.md).
     blockchain_module.url = "github:yayguru/logos-blockchain-module/windows-x86_64";
     # TODO(logos-co/logos-liblogos#219): here only to sample the node module's
     # CPU and memory. liblogos measures both already but exposes them to hosts
