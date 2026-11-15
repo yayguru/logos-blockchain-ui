@@ -1,19 +1,16 @@
-# Windows .lgx CI (ready to enable)
+# Windows .lgx CI
 
-`windows-lgx.yml` builds the Windows x86_64 `.lgx` on GitHub Actions with Nix
+`.github/workflows/windows-lgx.yml` builds the Windows x86_64 `.lgx` on GitHub Actions with Nix
 (mingw cross build), checks it (Linux unit tests / compile check), signs it
 when the `LGX_SIGNING_JWK` repository secret is set, and uploads the package
 plus `SHA256SUMS` as a workflow artifact. Without the secret it uploads an
 unsigned package (Basecamp then shows it as unsigned).
 
-Enabled: the workflow now lives in `.github/workflows/windows-lgx.yml`.
-push this branch has no `workflow` scope. To enable it (repo owner, once):
+It runs on every push to `windows-x86_64` (not for `.md`-only changes) and by hand
+(Actions → windows-lgx → Run workflow). To sign in CI, the repo owner adds the key once;
+it is read from the file and never printed:
 
 ```sh
-gh auth refresh -s workflow
-mkdir -p .github/workflows && git mv ci/windows-lgx.yml .github/workflows/
-git commit -m "CI: enable windows-lgx" && git push
-# optional signing; the key is read from the file and never printed:
 gh secret set LGX_SIGNING_JWK -R yayguru/<repo> < /path/to/yayguru.jwk
 ```
 
