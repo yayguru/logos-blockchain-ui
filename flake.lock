@@ -7,11 +7,11 @@
         "logos-module-builder": "logos-module-builder"
       },
       "locked": {
-        "lastModified": 1794618408,
-        "narHash": "sha256-yEnttOoJHRyWynbMLOQV2t0WD+oGLPQCp1zyGFj11ag=",
+        "lastModified": 1794774975,
+        "narHash": "sha256-3C4ZIb4vTboOzE4fii/FmUf3nEu5PfzP5a50pYdLlQg=",
         "owner": "yayguru",
         "repo": "logos-blockchain-module",
-        "rev": "597d9a45a41f18843980e4c2016250477f859f74",
+        "rev": "76ad6b4dc09f45f37a580a64bb9e125bdcf14f35",
         "type": "github"
       },
       "original": {
@@ -259,14 +259,14 @@
     "logos-blockchain-win": {
       "flake": false,
       "locked": {
-        "lastModified": 1794614400,
-        "narHash": "sha256-Qz7/c7FnNy+FCiv47UKV3/+0JknPuKIrPs4/eN+2BOA=",
+        "lastModified": 1794663387,
+        "narHash": "sha256-oMrOILAoOybTQYBSSBKMuwANt7fHw5U6q8iiDMM79v0=",
         "type": "tarball",
-        "url": "https://github.com/yayguru/logos-blockchain-module/releases/download/v0.3.4-windows.1/logos_blockchain-0.3.4-windows-x86_64-gnu.tar.gz"
+        "url": "https://github.com/yayguru/logos-blockchain-module/releases/download/v0.3.4-windows.3/logos_blockchain-0.3.4-windows-x86_64-gnu.tar.gz"
       },
       "original": {
         "type": "tarball",
-        "url": "https://github.com/yayguru/logos-blockchain-module/releases/download/v0.3.4-windows.1/logos_blockchain-0.3.4-windows-x86_64-gnu.tar.gz"
+        "url": "https://github.com/yayguru/logos-blockchain-module/releases/download/v0.3.4-windows.3/logos_blockchain-0.3.4-windows-x86_64-gnu.tar.gz"
       }
     },
     "logos-capability-module": {
