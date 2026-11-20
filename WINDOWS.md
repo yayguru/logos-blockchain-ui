@@ -143,13 +143,26 @@ and the estimated fee. Nothing is sent until you tick the confirmation box and p
 |---|---|---|
 | Accounts | Lists the keys in your keystore and their balances | Read only |
 | Transfer | Sends tokens to a 64-hex wallet address | Fee about 2,300 base units |
-| LEZ Bridge | Deposits tokens to a LEZ (base58) account through the bridge channel | Fee about 4,200 base units. The credit shows on LEZ after the bridge processes it, which can take a while. |
+| LEZ Bridge | Deposits tokens to a LEZ public account through the bridge channel | Fee about 4,200 base units. The page detects the LEZ version (0.3 or 0.4) first, see *LEZ 0.3 and 0.4* below. |
 | Channel Deposit | Moves whole notes into a *channel* (an app's own lane on the chain, e.g. the LEZ bridge) | Advanced; most users never need it. The selected notes are used **in full**, and only the holder of that channel's key can withdraw them back. |
 | Inscribe | Writes a short text, or an image (PNG/JPEG/GIF/WebP up to 512 KB, windows.13+), into your own inscription channel | Press *Estimate fee* first (about 3,900 base units for 42 bytes of text). The channel key is `inscribe_key.json` next to your config. |
 | Channel Withdraw | Releases notes deposited in **your** channel back to normal spendable notes | Needs that channel's key file (default `inscribe_key.json`), the channel id and the note ids. Press *Estimate fee* first. Fee about 3,900 for one note. |
 | SDP | Service Declaration Protocol: status, declarations, snapshot, plus declaration/activity/withdrawal forms | **A declaration locks a stake note of at least 1 token (1,000,000,000 base units) and registers you as a Blend provider.** If the declaration uses the node's own Blend keys, the node switches to Blend *core* mode. It must then be reachable from the internet on the declared UDP/QUIC locator, which needs port forwarding and a firewall rule. It also does proof and cover-traffic work. Do not declare from a PC behind NAT. Activity needs a real Blend activity proof. Withdrawal unlocks the stake one epoch after the withdrawal takes effect. There is no slashing. Mining does not need SDP. |
 
 1 token = 1,000,000,000 base units ("lepta").
+
+### LEZ 0.3 and 0.4 (windows.15+)
+
+LEZ 0.4 changed what a bridge deposit has to carry to name its recipient:
+
+* **LEZ 0.3** (the public testnet `https://testnet.lez.logos.co/` as of Nov 2026) expects the recipient's 32-byte **account id**. Credit comes after the L1 block is final, which can take hours.
+* **LEZ 0.4** (release candidates v0.4.0-rc*) expects `01 00` + the recipient's 32-byte **public key**. Credit usually comes minutes after the L1 block.
+
+Each version ignores the other's format, and the tokens then stay locked in the channel.
+So LEZ Bridge asks the LEZ RPC which version it runs before it builds a deposit, and shows the version, RPC and channel.
+If it cannot tell, it builds no deposit. Your built-in LEZ account works with both versions.
+On 0.4, someone else's account has to be entered as its public key: `wallet account get --keys -a Public/<account id>` prints it as `pk`.
+The **LEZ RPC** field can point the page at another sequencer: https anywhere, or plain http to `localhost` / `127.0.0.1` only. Leave it empty for the public testnet.
 
 ### LEZ deposit tracker and inscription history (windows.10+)
 
@@ -163,8 +176,8 @@ In windows.9 they used HTTP and were blocked inside Basecamp; windows.10 fixes t
   It shows how many slots are left until that block is final (LIB).
   Since windows.11 the last step is automatic: the UI backend (C++, outside the QML sandbox) asks the LEZ RPC
   (`https://testnet.lez.logos.co/`, method `getAccountBalance`, HTTPS only, nothing else) for the account balance.
-  It records the balance when you send, and marks the deposit *Credited* once the L1 block is final
-  and the balance has grown by at least the amount. You can still press **Mark credited** yourself.
+  It records the balance when you send, and marks the deposit *Credited* once the balance has grown by at least the amount
+  (since windows.15 it no longer waits for L1 finality first, because LEZ 0.4 credits earlier). You can still press **Mark credited** yourself.
   New deposits are added automatically. To follow an older deposit, enter its tx hash, amount, LEZ account and the L1 slot.
   The list is kept in `blockchain_ui_lez_tracker.ini` and survives restarts. It only reads data and never sends anything.
 * If the channel field holds anything other than the LEZ bridge channel,
