@@ -9,7 +9,10 @@ import "../controls"
 import "ChainRead.js" as ChainRead
 
 // Follows bridge deposits from "sent" to "credited on LEZ":
-//   sent → in an L1 block → final on L1 (LIB passed it) → credited on LEZ.
+//   sent → in an L1 block → credited on LEZ (→ final on L1).
+// LEZ 0.4 ("atomic deposits") mints a deposit it sees before L1 finality in a
+// LEZ block pinned on the deposit's channel note, so the credit usually comes
+// minutes after the L1 block; finality is only the latest it can come.
 // Read-only: the local node answers the L1 part. When the backend offers
 // lezGetAccountBalance (windows.11+), the public LEZ JSON-RPC answers the
 // balance and "credited" is detected on its own; otherwise it is marked by hand.
@@ -67,8 +70,8 @@ LogosFrame {
             var e = { tx: String(tx), amount: String(amountLepta), recipient: String(recipient || ""),
                       channel: String(channelId || "").toLowerCase(), sentMs: Date.now(), sentSlot: slot,
                       inclSlot: -1, baseline: -1, balance: -1, credited: false, creditedMs: 0, note: "" }
-            // The balance before the credit, read now: LEZ cannot credit a
-            // deposit before its L1 block is final, hours from now.
+            // The balance before the credit, read now, before the deposit is
+            // even in an L1 block (LEZ cannot credit it earlier than that).
             if (root.lezAuto && d.isLez(e)) {
                 root.chain.lezBalance(e.recipient, function(ok2, bal) {
                     if (ok2 && /^[0-9]+$/.test(String(bal).trim())) { e.baseline = Number(bal); e.balance = e.baseline }
@@ -136,7 +139,7 @@ LogosFrame {
             if (s === 2)
                 return isLez(e)
                        ? (root.lezAuto
-                          ? qsTr("Final on L1: LIB passed slot %1. Waiting for LEZ to credit it.").arg(String(e.inclSlot))
+                          ? qsTr("Final on L1: LIB passed slot %1, waiting for LEZ to credit it.").arg(String(e.inclSlot))
                             + balanceText(e)
                             + (e.baseline < 0 ? qsTr(" The balance before the deposit is unknown, so mark it yourself once it has arrived.") : "")
                           : qsTr("Final on L1: LIB passed slot %1. LEZ can credit it now. This build cannot read LEZ, so check the balance in a LEZ wallet and mark it here.")
@@ -145,10 +148,12 @@ LogosFrame {
                              .arg(String(e.inclSlot)).arg(e.channel.slice(0, 8) + "…")
             if (s === 1) {
                 var left = lib >= 0 ? e.inclSlot - lib : -1
+                var lezWait = isLez(e) ? qsTr(" Waiting for LEZ to credit it (LEZ 0.4: minutes; LEZ 0.3: after L1 finality).") : ""
                 return left >= 0
-                       ? qsTr("In an L1 block at slot %1. Waiting for finality: LIB is at slot %2, about %3 slots (≈%4 h) to go.")
-                             .arg(String(e.inclSlot)).arg(String(lib)).arg(String(left)).arg((left / 3600).toFixed(1))
-                       : qsTr("In an L1 block at slot %1. Waiting for finality.").arg(String(e.inclSlot))
+                       ? qsTr("In an L1 block at slot %1.").arg(String(e.inclSlot)) + lezWait
+                         + qsTr(" L1 finality: LIB is at slot %1, about %2 slots (≈%3 h) to go.")
+                             .arg(String(lib)).arg(String(left)).arg((left / 3600).toFixed(1))
+                       : qsTr("In an L1 block at slot %1.").arg(String(e.inclSlot)) + lezWait
             }
             if (e.note.length) return e.note
             return qsTr("Sent. Waiting for it to appear in an L1 block…")
@@ -203,10 +208,11 @@ LogosFrame {
                 if (v < 0) { lezError = ok ? qsTr("unexpected answer") : String(bal); next(); return }
                 lezError = ""
                 e.balance = v
-                // Before finality nothing can have been credited yet, so this
-                // reading is a fair "before".
-                if (e.baseline < 0 && stage(e) < 2) e.baseline = v
-                if (e.baseline >= 0 && stage(e) >= 2 && v >= e.baseline + Number(e.amount)) {
+                // Before the L1 block nothing can have been credited yet, so
+                // only that reading is a fair "before" (LEZ 0.4 may credit
+                // right after inclusion, long before finality).
+                if (e.baseline < 0 && stage(e) < 1) e.baseline = v
+                if (e.baseline >= 0 && v >= e.baseline + Number(e.amount)) {
                     e.credited = true
                     e.autoCredited = true
                     e.creditedMs = Date.now()
@@ -268,8 +274,8 @@ LogosFrame {
             Layout.fillWidth: true
             wrapMode: Text.WordWrap
             text: root.lezAuto
-                  ? qsTr("Each deposit goes: sent → in an L1 block → final on L1 → credited on LEZ. Finality currently lags many hours. Checked every 2 minutes while this page is open; reads only: L1 through your node, LEZ balances through the public LEZ RPC.")
-                  : qsTr("Each deposit goes: sent → in an L1 block → final on L1 → credited on LEZ. Finality currently lags many hours. Checked every 2 minutes while this page is open; reads only, through your node.")
+                  ? qsTr("Each deposit goes: sent → in an L1 block → credited on LEZ. LEZ 0.4 credits a deposit minutes after its L1 block; LEZ 0.3 (the public testnet as of Nov 2026) only after L1 finality, which can take hours. Checked every 2 minutes while this page is open; reads only: L1 through your node, LEZ balances through the public LEZ RPC.")
+                  : qsTr("Each deposit goes: sent → in an L1 block → credited on LEZ (minutes later with LEZ 0.4, after L1 finality with LEZ 0.3). Checked every 2 minutes while this page is open; reads only, through your node.")
             font.pixelSize: Theme.typography.secondaryText
             color: Theme.palette.textSecondary
         }
@@ -316,7 +322,7 @@ LogosFrame {
                     }
                     Item { Layout.fillWidth: true }
                     LogosButton {
-                        visible: row.stage === 2 && row.recipient.length > 0
+                        visible: row.stage >= 1 && row.stage < 3 && row.recipient.length > 0
                         text: qsTr("Mark credited")
                         onClicked: d.markCredited(row.tx)
                     }

@@ -238,6 +238,17 @@ class BlockchainBackend
     SLOT(QVariantMap lezAccount())
     SLOT(QVariantMap lezCreateAccount())
     SLOT(QVariantMap backupLezAccount(QString destinationPath))
+    // windows.15 (LEZ 0.4): the bridge deposit names its recipient by public
+    // key, not account id. Takes the recipient's LEZ public key (64 hex, the
+    // "pk" of `wallet account get --keys`) or this node's own LEZ account id,
+    // checks it is a valid x-only key and answers { public_key, account_id,
+    // metadata_hex, metadata_base58 } for the deposit.
+    SLOT(QVariantMap lezDepositRecipient(QString recipient))
+    // { rpc_url, default_rpc_url, lez_version: "0.3"|"0.4", rpc_channel_id }.
+    // The public testnet answered 0.3 in Nov 2026; a local 0.4 sequencer can be
+    // set with lezSetRpcUrl (https, or http://localhost). "" = build default.
+    SLOT(QVariantMap lezNetwork())
+    SLOT(QVariantMap lezSetRpcUrl(QString url))
     // A stop the user asked for was refused. Deliberately a signal, not a state:
     // the node is still running and still catching up, so the status must keep
     // saying so — this is a one-off "that didn't work, try again", not a mode

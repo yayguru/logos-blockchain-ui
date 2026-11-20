@@ -82,6 +82,28 @@ function lezAccountError(text) {
     return ""
 }
 
+// "" when `text` (base58) has the shape of LEZ bridge deposit metadata:
+//   LEZ 0.3 (public testnet, Nov 2026): the 32-byte account id;
+//   LEZ 0.4: 0x01 0x00 followed by the 32-byte public key (34 bytes).
+// A sequencer skips the other version's form and the notes then stay locked
+// in the channel, so the LEZ Bridge page (which asks the RPC) is the safe way.
+function lezMetadataError(text) {
+    var b = base58Decode(String(text || "").trim())
+    if (b === null || b.length === 0)
+        return "Deposits into the LEZ channel need the recipient as metadata. Use the LEZ Bridge page, which picks the right form for the running LEZ."
+    if (b.length === 32 || (b.length === 34 && b[0] === 1 && b[1] === 0))
+        return ""
+    return "Not LEZ deposit metadata (LEZ 0.3: 32-byte account id; LEZ 0.4: 01 00 + 32-byte public key). Use the LEZ Bridge page."
+}
+
+function lezMetadataForm(text) {
+    var b = base58Decode(String(text || "").trim())
+    if (!b) return ""
+    if (b.length === 32) return "0.3"
+    if (b.length === 34 && b[0] === 1 && b[1] === 0) return "0.4"
+    return ""
+}
+
 function lezAccountHex(text) {
     var b = base58Decode(text)
     return b && b.length === 32 ? bytesToHex(b) : ""
@@ -91,6 +113,7 @@ function lezAccountHex(text) {
 // Calibrated on mainnet-testnet txs at ep=1 / sp=7:
 //   inscription (40 B)     mandatory 3509 = 646*1 + (40+369)*7   (exact)
 //   LEZ deposit, 1 note    actual    4218 (2cc1bac4, de6c98fa)    -> 646 + 511*7 = 4223
+//   (LEZ 0.4 metadata is 34 bytes instead of 32: +2 storage bytes -> 513)
 //   wallet transfer 1 in / 2 out ~2.3k (3cac14d1)                -> 590 + 245*7 = 2305
 // The wallet computes the exact fee when it builds the transaction; these are
 // the preview figures, and the deposit cap below is what the node enforces.
@@ -100,7 +123,7 @@ function estimateTransferFee(ep, sp) {
 
 function estimateDepositFee(noteCount, ep, sp) {
     var n = Math.max(1, noteCount | 0)
-    return 646 * ep + (511 + 32 * (n - 1)) * sp
+    return 646 * ep + (513 + 32 * (n - 1)) * sp
 }
 
 // Hard cap handed to channel_deposit_with_notes: 1.5x the preview, so normal

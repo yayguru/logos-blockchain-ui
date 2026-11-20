@@ -7,6 +7,7 @@ import Logos.Icons
 
 import "../controls"
 import "../Units.js" as Units
+import "../WalletTools.js" as WalletTools
 
 // Multi-step wizard for channel_deposit_with_notes:
 //   1. Select notes  → wallet_get_notes, pick UTXOs to consume
@@ -156,9 +157,20 @@ ColumnLayout {
         // has no checksum, so a valid-alphabet string always decodes.
         function metadataIsValid() {
             var s = metadataField.text.trim()
+            if (isLezTarget())
+                return lezMetadataError().length === 0
             if (s === "")
                 return true // optional
             return /^[1-9A-HJ-NP-Za-km-z]+$/.test(s)
+        }
+        // windows.15: into the LEZ bridge channel only LEZ 0.4 recipient
+        // metadata is accepted; anything else would lock the notes for good.
+        function isLezTarget() {
+            var c = channelIdField.text.trim().replace(/^0x/i, "").toLowerCase()
+            return root.lezChannelId.length > 0 && c === root.lezChannelId.replace(/^0x/i, "").toLowerCase()
+        }
+        function lezMetadataError() {
+            return WalletTools.lezMetadataError(metadataField.text)
         }
 
         function tipIsValid() {
@@ -559,7 +571,23 @@ ColumnLayout {
                 }
                 LogosText {
                     Layout.fillWidth: true
-                    visible: metadataField.text.trim() !== "" && !d.metadataIsValid()
+                    visible: d.isLezTarget() && d.metadataIsValid()
+                    text: qsTr("LEZ %1 metadata form. It must match the LEZ version the sequencer runs (the public testnet ran 0.3 in Nov 2026), or LEZ skips the deposit and the notes stay locked. The LEZ Bridge page checks this for you.").arg(WalletTools.lezMetadataForm(metadataField.text))
+                    color: Theme.palette.warning
+                    font.pixelSize: Theme.typography.secondaryText
+                    wrapMode: Text.WordWrap
+                }
+                LogosText {
+                    Layout.fillWidth: true
+                    visible: d.isLezTarget() && !d.metadataIsValid()
+                    text: qsTr(d.lezMetadataError())
+                    color: Theme.palette.error
+                    font.pixelSize: Theme.typography.secondaryText
+                    wrapMode: Text.WordWrap
+                }
+                LogosText {
+                    Layout.fillWidth: true
+                    visible: !d.isLezTarget() && metadataField.text.trim() !== "" && !d.metadataIsValid()
                     text: qsTr("Invalid base58 input")
                     color: Theme.palette.error
                     font.pixelSize: Theme.typography.secondaryText

@@ -1282,43 +1282,132 @@ QVariantMap BlockchainBackend::getNodeAutostart()
     return reply;
 }
 
+// The LEZ RPC in use: the user's override (Settings, windows.15) or the
+// build's metadata lez_rpc_url. https anywhere; plain http only to this
+// machine, for a local LEZ sequencer (e.g. a 0.4 release candidate).
+QString BlockchainBackend::lezRpcUrl() const
+{
+    const QString o = appSettings()->value(QStringLiteral("lezRpcUrl")).toString().trimmed();
+    return lezRpcUrlAllowed(o) ? o : m_lezRpcUrl;
+}
+
+bool BlockchainBackend::lezRpcUrlAllowed(const QString& text)
+{
+    const QUrl url(text);
+    if (text.isEmpty() || !url.isValid() || url.host().isEmpty())
+        return false;
+    if (url.scheme() == QLatin1String("https"))
+        return true;
+    const QString h = url.host().toLower();
+    return url.scheme() == QLatin1String("http")
+           && (h == QLatin1String("localhost") || h == QLatin1String("127.0.0.1") || h == QLatin1String("::1"));
+}
+
+// One JSON-RPC call to the LEZ sequencer. Answers the raw reply body in *raw
+// and the parsed object in *reply; false with *error on a transport problem.
+bool BlockchainBackend::lezRpc(const QString& method, const QJsonArray& params,
+                               QJsonObject* reply, QByteArray* raw, QString* error)
+{
+    const QString rpcUrl = lezRpcUrl();
+    if (!lezRpcUrlAllowed(rpcUrl)) {
+        *error = QStringLiteral("The LEZ RPC URL must be https (or http://localhost).");
+        return false;
+    }
+    if (!m_net)
+        m_net = new QNetworkAccessManager(this);
+    QNetworkRequest req{QUrl(rpcUrl)};
+    req.setHeader(QNetworkRequest::ContentTypeHeader, QStringLiteral("application/json"));
+    req.setHeader(QNetworkRequest::UserAgentHeader, QStringLiteral("logos-blockchain-ui"));
+    req.setTransferTimeout(15000);
+    const QJsonObject body{ { QStringLiteral("jsonrpc"), QStringLiteral("2.0") },
+                            { QStringLiteral("id"), 1 },
+                            { QStringLiteral("method"), method },
+                            { QStringLiteral("params"), params } };
+    QNetworkReply* r = m_net->post(req, QJsonDocument(body).toJson(QJsonDocument::Compact));
+    QEventLoop loop;
+    connect(r, &QNetworkReply::finished, &loop, &QEventLoop::quit);
+    QTimer::singleShot(16000, &loop, &QEventLoop::quit);
+    if (!r->isFinished())
+        loop.exec();
+    if (!r->isFinished()) {
+        r->abort();
+        r->deleteLater();
+        *error = QStringLiteral("The LEZ RPC did not answer in time.");
+        return false;
+    }
+    const QByteArray data = r->readAll();
+    const QString netError = r->error() == QNetworkReply::NoError ? QString() : r->errorString();
+    r->deleteLater();
+    if (!netError.isEmpty() && data.isEmpty()) {
+        *error = QStringLiteral("LEZ RPC: ") + netError;
+        return false;
+    }
+    const QJsonDocument doc = QJsonDocument::fromJson(data);
+    if (!doc.isObject()) {
+        *error = QStringLiteral("LEZ RPC: unexpected answer");
+        return false;
+    }
+    *reply = doc.object();
+    if (raw)
+        *raw = data;
+    return true;
+}
+
+// Which LEZ the RPC runs. The bridge deposit metadata differs:
+//   0.3.x (public testnet as of Nov 2026): borsh AccountId = the 32-byte id;
+//   0.4.x: DepositMetadata { Identified(Key(pk)) } = 01 00 || pk (34 bytes).
+// Each sequencer skips the other's form and the notes stay locked in the
+// channel, so a deposit is only built when this answered. 0.4 added the
+// getPublications / getRecoveryBinding methods; 0.3 says "Method not found".
+QVariantMap BlockchainBackend::lezNetwork()
+{
+    const QString url = lezRpcUrl();
+    if (m_lezVersionUrl != url || m_lezVersion.isEmpty()) {
+        QJsonObject o; QString err;
+        if (!lezRpc(QStringLiteral("getRecoveryBinding"), QJsonArray{}, &o, nullptr, &err))
+            return result::toVariantMap(result::err(err));
+        const int code = o.value(QStringLiteral("error")).toObject().value(QStringLiteral("code")).toInt();
+        const QString version = (o.contains(QStringLiteral("error")) && code == -32601)
+                                ? QStringLiteral("0.3") : QStringLiteral("0.4");
+        QJsonObject c;
+        if (!lezRpc(QStringLiteral("getChannelId"), QJsonArray{}, &c, nullptr, &err))
+            return result::toVariantMap(result::err(err));
+        m_lezRpcChannelId = c.value(QStringLiteral("result")).toString().toLower();
+        m_lezVersion = version;
+        m_lezVersionUrl = url;
+    }
+    QVariantMap out;
+    out.insert(QStringLiteral("rpc_url"), url);
+    out.insert(QStringLiteral("default_rpc_url"), m_lezRpcUrl);
+    out.insert(QStringLiteral("lez_version"), m_lezVersion);
+    out.insert(QStringLiteral("rpc_channel_id"), m_lezRpcChannelId);
+    return result::toVariantMap(LogosResult{true, out, QVariant()});
+}
+
+QVariantMap BlockchainBackend::lezSetRpcUrl(QString url)
+{
+    const QString u = url.trimmed();
+    if (!u.isEmpty() && !lezRpcUrlAllowed(u))
+        return result::toVariantMap(result::err(QStringLiteral(
+            "Use an https URL, or http://localhost / http://127.0.0.1 for a sequencer on this machine.")));
+    if (u.isEmpty())
+        appSettings()->remove(QStringLiteral("lezRpcUrl"));
+    else
+        appSettings()->setValue(QStringLiteral("lezRpcUrl"), u);
+    m_lezVersion.clear();
+    m_lezVersionUrl.clear();
+    return lezNetwork();
+}
+
 QVariantMap BlockchainBackend::lezGetAccountBalance(QString accountBase58)
 {
     static const QRegularExpression base58(QStringLiteral("^[1-9A-HJ-NP-Za-km-z]{32,64}$"));
     const QString account = accountBase58.trimmed();
     if (!base58.match(account).hasMatch())
         return result::toVariantMap(result::err(QStringLiteral("That is not a LEZ account (base58).")));
-    const QUrl url(m_lezRpcUrl);
-    if (url.scheme() != QLatin1String("https"))
-        return result::toVariantMap(result::err(QStringLiteral("The LEZ RPC URL must be https.")));
-    if (!m_net)
-        m_net = new QNetworkAccessManager(this);
-
-    QNetworkRequest req(url);
-    req.setHeader(QNetworkRequest::ContentTypeHeader, QStringLiteral("application/json"));
-    req.setHeader(QNetworkRequest::UserAgentHeader, QStringLiteral("logos-blockchain-ui"));
-    req.setTransferTimeout(15000);
-    const QJsonObject body{ { QStringLiteral("jsonrpc"), QStringLiteral("2.0") },
-                            { QStringLiteral("id"), 1 },
-                            { QStringLiteral("method"), QStringLiteral("getAccountBalance") },
-                            { QStringLiteral("params"), QJsonArray{ account } } };
-    QNetworkReply* reply = m_net->post(req, QJsonDocument(body).toJson(QJsonDocument::Compact));
-    QEventLoop loop;
-    connect(reply, &QNetworkReply::finished, &loop, &QEventLoop::quit);
-    QTimer::singleShot(16000, &loop, &QEventLoop::quit);
-    if (!reply->isFinished())
-        loop.exec();
-    if (!reply->isFinished()) {
-        reply->abort();
-        reply->deleteLater();
-        return result::toVariantMap(result::err(QStringLiteral("The LEZ RPC did not answer in time.")));
-    }
-    const QByteArray data = reply->readAll();
-    const QString netError = reply->error() == QNetworkReply::NoError ? QString() : reply->errorString();
-    reply->deleteLater();
-    if (!netError.isEmpty())
-        return result::toVariantMap(result::err(QStringLiteral("LEZ RPC: ") + netError));
-    const QJsonObject o = QJsonDocument::fromJson(data).object();
+    QJsonObject o; QByteArray data; QString err;
+    if (!lezRpc(QStringLiteral("getAccountBalance"), QJsonArray{ account }, &o, &data, &err))
+        return result::toVariantMap(result::err(err));
     if (o.contains(QStringLiteral("error")))
         return result::toVariantMap(result::err(QStringLiteral("LEZ RPC: ")
             + QString::fromUtf8(QJsonDocument(o.value(QStringLiteral("error")).toObject()).toJson(QJsonDocument::Compact))));
@@ -1326,8 +1415,13 @@ QVariantMap BlockchainBackend::lezGetAccountBalance(QString accountBase58)
     QString out;
     if (v.isString())
         out = v.toString();
-    else if (v.isDouble())
-        out = QString::number(static_cast<qint64>(v.toDouble()));
+    else if (v.isDouble()) {
+        // getAccountBalance answers a u128 as a bare JSON number; a double
+        // loses digits past 2^53, so take the digits from the raw text.
+        static const QRegularExpression rawResult(QStringLiteral("\"result\"\\s*:\\s*([0-9]+)\\s*[,}]"));
+        const QRegularExpressionMatch m = rawResult.match(QString::fromUtf8(data));
+        out = m.hasMatch() ? m.captured(1) : QString::number(static_cast<qint64>(v.toDouble()));
+    }
     else if (v.isObject() && v.toObject().contains(QStringLiteral("balance")))
         out = v.toObject().value(QStringLiteral("balance")).toVariant().toString();
     if (out.isEmpty())
@@ -4179,6 +4273,79 @@ QVariantMap BlockchainBackend::lezAccount()
     out.insert(QStringLiteral("public_key"), QString::fromStdString(lezkeys::hex(pk.data(), pk.size())));
     out.insert(QStringLiteral("created"), o.value(QStringLiteral("created")).toString());
     out.insert(QStringLiteral("backed_up"), appSettings()->value(QStringLiteral("lezAccountBackedUp"), false).toBool());
+    return result::toVariantMap(LogosResult{true, out, QVariant()});
+}
+
+QVariantMap BlockchainBackend::lezDepositRecipient(QString recipient)
+{
+    const QVariantMap net = lezNetwork();
+    if (!net.value(QStringLiteral("success")).toBool())
+        return result::toVariantMap(result::err(QStringLiteral(
+            "Cannot tell which LEZ version the RPC runs, so no deposit is built (the metadata differs between 0.3 and 0.4): ")
+            + net.value(QStringLiteral("error")).toString()));
+    const QVariantMap netv = net.value(QStringLiteral("value")).toMap();
+    const bool v04 = netv.value(QStringLiteral("lez_version")).toString() == QLatin1String("0.4");
+    QString text = recipient.trimmed();
+    QByteArray idBytes; // 0.3 accepts a bare account id
+    static const QRegularExpression hex64(QStringLiteral("^(0x)?[0-9a-fA-F]{64}$"));
+    static const QRegularExpression b58(QStringLiteral("^[1-9A-HJ-NP-Za-km-z]{32,44}$"));
+    QByteArray pkBytes;
+    if (hex64.match(text).hasMatch()) {
+        if (text.startsWith(QLatin1String("0x"), Qt::CaseInsensitive))
+            text = text.mid(2);
+        pkBytes = QByteArray::fromHex(text.toLatin1());
+    } else if (b58.match(text).hasMatch()) {
+        // An account id is a hash of the key; LEZ 0.4 needs the key itself.
+        // Our own account is the one id we can map back.
+        const QVariantMap own = lezAccount();
+        const QVariantMap v = own.value(QStringLiteral("value")).toMap();
+        bool ok = false;
+        const QByteArray decoded = decodeBase58(text, &ok);
+        if (v.value(QStringLiteral("exists")).toBool() && v.value(QStringLiteral("account_id")).toString() == text)
+            pkBytes = QByteArray::fromHex(v.value(QStringLiteral("public_key")).toString().toLatin1());
+        else if (!v04 && ok && decoded.size() == 32)
+            idBytes = decoded;
+        else if (!v04)
+            return result::toVariantMap(result::err(QStringLiteral("A LEZ account id decodes to 32 bytes.")));
+        else
+            return result::toVariantMap(result::err(QStringLiteral(
+                "LEZ 0.4 deposits name the recipient by public key, not account id. "
+                "Paste the account's public key (64 hex): the LEZ wallet shows it with "
+                "wallet account get --keys -a Public/<account id>")));
+    } else {
+        return result::toVariantMap(result::err(QStringLiteral(
+            "Enter the recipient's LEZ public key (64 hex characters).")));
+    }
+    QVariantMap out;
+    out.insert(QStringLiteral("lez_version"), netv.value(QStringLiteral("lez_version")));
+    out.insert(QStringLiteral("rpc_url"), netv.value(QStringLiteral("rpc_url")));
+    out.insert(QStringLiteral("rpc_channel_id"), netv.value(QStringLiteral("rpc_channel_id")));
+    if (idBytes.size() == 32) { // 0.3, someone else's account id
+        out.insert(QStringLiteral("public_key"), QString());
+        out.insert(QStringLiteral("account_id"), text);
+        out.insert(QStringLiteral("metadata_hex"), QString::fromLatin1(idBytes.toHex()));
+        out.insert(QStringLiteral("metadata_base58"), text);
+        return result::toVariantMap(LogosResult{true, out, QVariant()});
+    }
+    if (pkBytes.size() != 32)
+        return result::toVariantMap(result::err(QStringLiteral("A LEZ public key is 32 bytes.")));
+    lezkeys::Bytes32 pk{};
+    std::memcpy(pk.data(), pkBytes.constData(), 32);
+    if (!lezkeys::isValidXOnly(pk))
+        return result::toVariantMap(result::err(QStringLiteral(
+            "That is not a valid LEZ public key (not a secp256k1 x-only key). "
+            "LEZ would skip a deposit to it and the tokens would stay locked in the channel.")));
+    const lezkeys::Bytes32 id = lezkeys::accountIdFromPublicKey(pk);
+    out.insert(QStringLiteral("public_key"), QString::fromStdString(lezkeys::hex(pk.data(), pk.size())));
+    out.insert(QStringLiteral("account_id"), QString::fromStdString(lezkeys::base58(id.data(), id.size())));
+    if (v04) {
+        const auto meta = lezkeys::depositMetadata(pk);
+        out.insert(QStringLiteral("metadata_hex"), QString::fromStdString(lezkeys::hex(meta.data(), meta.size())));
+        out.insert(QStringLiteral("metadata_base58"), QString::fromStdString(lezkeys::base58(meta.data(), meta.size())));
+    } else {
+        out.insert(QStringLiteral("metadata_hex"), QString::fromStdString(lezkeys::hex(id.data(), id.size())));
+        out.insert(QStringLiteral("metadata_base58"), QString::fromStdString(lezkeys::base58(id.data(), id.size())));
+    }
     return result::toVariantMap(LogosResult{true, out, QVariant()});
 }
 

@@ -5,6 +5,9 @@ class QNetworkAccessManager;
 #include <QDateTime>
 #include <QElapsedTimer>
 #include <QHash>
+#include <QByteArray>
+#include <QJsonArray>
+#include <QJsonObject>
 #include <QObject>
 #include <QSet>
 #include <QString>
@@ -124,6 +127,9 @@ public slots:
     QVariantMap lezAccount() override;
     QVariantMap lezCreateAccount() override;
     QVariantMap backupLezAccount(QString destinationPath) override;
+    QVariantMap lezDepositRecipient(QString recipient) override;
+    QVariantMap lezNetwork() override;
+    QVariantMap lezSetRpcUrl(QString url) override;
     // Folder of the current user config (where keystore.yaml lives).
     [[nodiscard]] QString configDir() const;
     QVariantMap powStartMining() override;
@@ -155,6 +161,14 @@ private:
     void adoptRunningNode();
     bool m_moduleAutostart = false; // last known module autostart flag (set/get)
     QString m_lezRpcUrl = QStringLiteral("https://testnet.lez.logos.co/");
+    // windows.15: LEZ version of the RPC in use ("0.3" / "0.4"), probed once per URL.
+    QString m_lezVersion;
+    QString m_lezVersionUrl;
+    QString m_lezRpcChannelId;
+    [[nodiscard]] QString lezRpcUrl() const;
+    static bool lezRpcUrlAllowed(const QString& text);
+    bool lezRpc(const QString& method, const QJsonArray& params,
+                QJsonObject* reply, QByteArray* raw, QString* error);
     // The plugin folder from the host (setModuleContext). Image previews are
     // cached under it because the QML sandbox only loads files from there.
     QString m_modulePath;

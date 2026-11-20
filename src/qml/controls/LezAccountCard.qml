@@ -107,7 +107,7 @@ LogosFrame {
             objectName: "lezAccountBalance"
             visible: root.hasAccount
             text: root.balance.length
-                  ? qsTr("Balance: %1 %2 (%3 base units)").arg(Units.format(root.balance)).arg(Units.SYMBOL).arg(root.balance)
+                  ? qsTr("Balance: %1 (%2 base units)").arg(Units.format(root.balance)).arg(root.balance)
                   : qsTr("Balance: —")
             font.pixelSize: Theme.typography.secondaryText
             color: Theme.palette.text

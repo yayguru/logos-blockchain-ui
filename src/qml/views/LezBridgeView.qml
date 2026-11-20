@@ -11,8 +11,11 @@ import "../WalletTools.js" as WalletTools
 // LEZ bridge: move an exact amount from a wallet account into a LEZ public
 // account.
 //
-// On L1 this is a ChannelDeposit into the LEZ channel (0101…01 on the testnet)
-// with the LEZ account's 32 bytes as metadata. A deposit consumes whole notes,
+// On L1 this is a ChannelDeposit into the LEZ channel (0101…01 on the testnet).
+// LEZ 0.4 metadata names the recipient by public key: borsh DepositMetadata
+// = 0x01 0x00 || pk (34 bytes), built and checked by the backend
+// (lezDepositRecipient). The 0.3 form (bare account id) is skipped by a 0.4
+// sequencer and would leave the notes locked in the channel. A deposit consumes whole notes,
 // so the form looks for a note worth exactly the amount. When there is none it
 // first splits one off with an ordinary transfer to the same account, waits for
 // that note to land, then deposits it — two transactions, both shown in the
@@ -58,6 +61,9 @@ ColumnLayout {
         if (ownLezAccount.length && recipientField.text.trim().length === 0)
             recipientField.text = ownLezAccount
     }
+
+    Component.onCompleted: d.loadNet()
+    onChainChanged: d.loadNet()
 
     // ---- Results from the host ----
     function setGasPrices(success, text) {
@@ -134,8 +140,10 @@ ColumnLayout {
         d.depositTx = String(text)
         d.phase = 3
         d.status = d.toLez
-                   ? qsTr("Deposit submitted. The LEZ account is credited once this L1 block is final (LIB), which currently takes many hours. Follow it in the tracker below.")
+                   ? qsTr("Deposit submitted. LEZ 0.4 credits it in a LEZ block pinned on this deposit, usually minutes after it lands in an L1 block; at the latest once the L1 block is final. Follow it in the tracker below.")
                    : qsTr("Deposit submitted to channel %1. This is not the LEZ bridge channel, so no LEZ account will be credited; the note now sits in that channel.").arg(d.channelId)
+        if (d.toLez && !d.v04)
+            d.status = qsTr("Deposit submitted. This LEZ (0.3, the current public testnet) credits it only once the L1 block is final (LIB), which can take many hours. Follow it in the tracker below.")
         tracker.addSent(d.depositTx, d.amountLepta, d.toLez ? d.recipient : "", d.channelId)
     }
 
@@ -157,8 +165,50 @@ ColumnLayout {
         // Snapshot of the reviewed request.
         property string fromKey: ""
         property string fromLabel: ""
-        property string recipient: ""
-        property string recipientHex: ""
+        property string recipient: ""      // LEZ account id (base58), for the tracker
+        property string recipientHex: ""   // LEZ public key (hex)
+        property string metadataBase58: "" // 0x01 0x00 || pk
+        // Live check of the recipient field (async, through the backend).
+        property string checkedText: ""
+        property var checked: null         // { public_key, account_id, metadata_base58, lez_version } or null
+        property string checkError: ""
+        // LEZ network behind the RPC (windows.15): { rpc_url, default_rpc_url, lez_version, rpc_channel_id }.
+        property var net: null
+        property string netError: ""
+        readonly property bool v04: !!net && net.lez_version === "0.4"
+        function loadNet() {
+            if (!root.chain || typeof root.chain.lezNetwork !== "function") return
+            root.chain.lezNetwork(function(ok, v) {
+                if (ok) { net = v; netError = ""; rpcField.text = (v.rpc_url !== v.default_rpc_url) ? v.rpc_url : "" }
+                else { net = null; netError = String(v) }
+                checkedText = "\u0000"; checkRecipient()
+            })
+        }
+        function setRpc(url) {
+            if (!root.chain || typeof root.chain.lezSetRpcUrl !== "function") return
+            net = null
+            root.chain.lezSetRpcUrl(url, function(ok, v) {
+                if (ok) { net = v; netError = "" } else netError = String(v)
+                checkedText = "\u0000"; checkRecipient()
+            })
+        }
+        function checkRecipient() {
+            var t = recipientField.text.trim()
+            if (t === checkedText) return
+            checkedText = t
+            checked = null
+            checkError = ""
+            if (!t.length) return
+            if (!root.chain || !root.chain.lezRecipientAvailable) {
+                checkError = qsTr("This backend cannot build LEZ 0.4 deposits.")
+                return
+            }
+            root.chain.lezRecipient(t, function(ok, v) {
+                if (t !== recipientField.text.trim()) return
+                if (ok) { checked = v; checkError = "" }
+                else { checked = null; checkError = String(v) }
+            })
+        }
         property string channelId: ""
         property string amountTokens: ""
         property string amountLepta: ""
@@ -190,9 +240,12 @@ ColumnLayout {
         function formError() {
             if (!String(fromCombo.currentValue || "").length)
                 return qsTr("Choose the account to send from.")
-            var e = WalletTools.lezAccountError(recipientField.text)
-            if (e.length)
-                return qsTr(e)
+            if (recipientField.text.trim().length === 0)
+                return qsTr("Enter the LEZ recipient.")
+            if (checkError.length)
+                return checkError
+            if (!checked || checkedText !== recipientField.text.trim())
+                return qsTr("Checking the recipient…")
             if (!/^(0x)?[0-9a-fA-F]{64}$/.test(channel()))
                 return qsTr("The LEZ channel id must be 64 hex characters.")
             var pa = Units.parseAmount(amountField.text)
@@ -214,8 +267,9 @@ ColumnLayout {
         function startPreview() {
             fromKey = String(fromCombo.currentValue || "")
             fromLabel = fromCombo.currentText
-            recipient = recipientField.text.trim()
-            recipientHex = WalletTools.lezAccountHex(recipient)
+            recipient = String(checked.account_id)
+            recipientHex = String(checked.public_key)
+            metadataBase58 = String(checked.metadata_base58)
             channelId = channel().replace(/^0x/i, "").toLowerCase()
             var pa = Units.parseAmount(amountField.text)
             amountTokens = pa.canonical
@@ -252,7 +306,7 @@ ColumnLayout {
 
         function sendDeposit() {
             depositPending = true
-            root.depositRequested(channelId, [exactNoteId], recipient, fromKey,
+            root.depositRequested(channelId, [exactNoteId], metadataBase58, fromKey,
                                   [fromKey], WalletTools.leptaSmallToTokens(depositCap))
         }
 
@@ -307,7 +361,7 @@ ColumnLayout {
             LogosText {
                 Layout.fillWidth: true
                 wrapMode: Text.WordWrap
-                text: qsTr("Bridge tokens to a LEZ public account. You see the plan and fees first; nothing is sent until you confirm. The LEZ side credits the deposit after the L1 block is final.")
+                text: qsTr("Bridge tokens to a LEZ public account. You see the plan and fees first; nothing is sent until you confirm. The deposit format follows the LEZ version the RPC below runs (0.3 or 0.4).")
                 color: Theme.palette.textSecondary
             }
 
@@ -340,21 +394,61 @@ ColumnLayout {
                 }
             }
 
-            FieldLabel { text: qsTr("LEZ recipient account (base58)") }
+            LogosText {
+                objectName: "lezNetworkLine"
+                Accessible.name: text
+                Layout.fillWidth: true
+                wrapMode: Text.WrapAnywhere
+                font.pixelSize: Theme.typography.secondaryText
+                color: d.netError.length ? Theme.palette.error : Theme.palette.textSecondary
+                text: d.netError.length
+                      ? qsTr("LEZ RPC: %1").arg(d.netError)
+                      : (d.net ? qsTr("LEZ %1 at %2 (channel %3…). %4")
+                                   .arg(d.net.lez_version).arg(d.net.rpc_url).arg(String(d.net.rpc_channel_id).slice(0, 8))
+                                   .arg(d.v04 ? qsTr("Deposits name the recipient by public key and are credited minutes after the L1 block.")
+                                              : qsTr("Deposits name the recipient by account id and are credited after L1 finality (hours)."))
+                               : qsTr("Checking which LEZ version the RPC runs…"))
+            }
+            RowLayout {
+                Layout.fillWidth: true
+                LogosTextField {
+                    id: rpcField
+                    objectName: "lezRpcField"
+                    Layout.fillWidth: true
+                    placeholderText: qsTr("LEZ RPC (empty = built-in public testnet; http://127.0.0.1:<port> for a local sequencer)")
+                    enabled: d.phase === 0 || d.phase === 4
+                }
+                LogosButton {
+                    objectName: "lezRpcApply"
+                    text: qsTr("Use")
+                    enabled: d.phase === 0 || d.phase === 4
+                    onClicked: d.setRpc(rpcField.text.trim())
+                }
+            }
+
+            FieldLabel { text: d.v04 ? qsTr("LEZ recipient public key (64 hex), or your own LEZ account")
+                                     : qsTr("LEZ recipient account (base58) or public key (64 hex)") }
             LogosTextField {
                 id: recipientField
                 objectName: "lezRecipientField"
                 Layout.fillWidth: true
-                placeholderText: qsTr("e.g. 7JSTY… (44 characters)")
+                placeholderText: d.v04 ? qsTr("pk from: wallet account get --keys -a Public/<account id>")
+                                       : qsTr("e.g. 7JSTY… (44 characters)")
                 enabled: d.phase === 0 || d.phase === 4
-                Accessible.name: qsTr("LEZ recipient account")
+                Accessible.name: qsTr("LEZ recipient public key")
+                onTextChanged: recipientCheck.restart()
             }
+            Timer { id: recipientCheck; interval: 300; onTriggered: d.checkRecipient() }
             LogosText {
+                objectName: "lezRecipientCheck"
                 Layout.fillWidth: true
                 visible: recipientField.text.trim().length > 0
-                readonly property string err: WalletTools.lezAccountError(recipientField.text)
-                text: err.length ? qsTr(err)
-                                 : qsTr("Account bytes: %1").arg(WalletTools.lezAccountHex(recipientField.text))
+                readonly property string err: d.checkError
+                text: err.length ? err
+                                 : (d.checked ? (String(d.checked.public_key).length
+                                                 ? qsTr("LEZ account %1 (public key %2…), LEZ %3 metadata").arg(String(d.checked.account_id)).arg(String(d.checked.public_key).slice(0, 16)).arg(String(d.checked.lez_version))
+                                                 : qsTr("LEZ account %1, LEZ %2 metadata").arg(String(d.checked.account_id)).arg(String(d.checked.lez_version)))
+                                              : qsTr("Checking…"))
                 color: err.length ? Theme.palette.error : Theme.palette.textSecondary
                 font.pixelSize: Theme.typography.secondaryText
                 wrapMode: Text.WrapAnywhere
@@ -448,8 +542,9 @@ ColumnLayout {
                     }
                     LogosText {
                         Layout.fillWidth: true
-                        text: d.toLez ? qsTr("To LEZ account: %1").arg(d.recipient)
-                                     : qsTr("To channel %1 (not the LEZ bridge; metadata %2)").arg(d.channelId).arg(d.recipient)
+                        text: d.toLez ? (d.recipientHex.length ? qsTr("To LEZ account: %1 (public key %2)").arg(d.recipient).arg(d.recipientHex)
+                                                               : qsTr("To LEZ account: %1").arg(d.recipient))
+                                     : qsTr("To channel %1 (not the LEZ bridge; metadata %2)").arg(d.channelId).arg(d.metadataBase58)
                         wrapMode: Text.WrapAnywhere
                         Accessible.name: text
                     }

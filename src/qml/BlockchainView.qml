@@ -393,6 +393,12 @@ Rectangle {
         // network, ui_qml may not. Absent on older backends.
         readonly property bool lezAvailable: !!(root.backend && typeof root.backend.lezGetAccountBalance === "function")
         function lezBalance(account, cb) { call(function() { return root.backend.lezGetAccountBalance(account) }, cb) }
+        // LEZ 0.4 deposit recipient (windows.15): public key or own account id
+        // -> { public_key, account_id, metadata_base58 }.
+        readonly property bool lezRecipientAvailable: !!(root.backend && typeof root.backend.lezDepositRecipient === "function")
+        function lezRecipient(text, cb) { call(function() { return root.backend.lezDepositRecipient(text) }, cb) }
+        function lezNetwork(cb) { call(function() { return root.backend.lezNetwork() }, cb) }
+        function lezSetRpcUrl(url, cb) { call(function() { return root.backend.lezSetRpcUrl(url) }, cb) }
         // File size + image type (windows.13); ui_qml cannot stat files.
         readonly property bool inspectAvailable: !!(root.backend && typeof root.backend.inspectFile === "function")
         function inspectFile(path, cb) { call(function() { return root.backend.inspectFile(path) }, cb) }

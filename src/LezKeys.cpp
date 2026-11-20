@@ -181,6 +181,31 @@ Bytes32 xOnlyPublicKey(const Bytes32& secret) {
     return toBE(r.x);
 }
 
+bool isValidXOnly(const Bytes32& xonly) {
+    const U256 x = fromBE(xonly);
+    if (cmp(x, P) >= 0)
+        return false;
+    const U256 seven = {{7, 0, 0, 0}};
+    const U256 y2 = fadd(fmul(fmul(x, x), x), seven);
+    if (isZero(y2))
+        return true;
+    // Euler's criterion: y2^((p-1)/2) == 1.
+    U256 e; const U256 one = {{1, 0, 0, 0}};
+    subTo(e, P, one);
+    for (int i = 0; i < 4; ++i) { // e >>= 1
+        e.v[i] = (e.v[i] >> 1) | (i < 3 ? (e.v[i + 1] << 63) : 0);
+    }
+    return cmp(fpow(y2, e), one) == 0;
+}
+
+std::array<uint8_t, 34> depositMetadata(const Bytes32& xonly) {
+    std::array<uint8_t, 34> m{};
+    m[0] = 0x01; // DepositRecipient::Identified
+    m[1] = 0x00; // PublicAccountEvidence::Key
+    std::memcpy(m.data() + 2, xonly.data(), 32);
+    return m;
+}
+
 Bytes32 accountIdFromPublicKey(const Bytes32& xonly) {
     uint8_t prefix[32] = {0};
     const char* tag = "/LEE/v0.3/AccountId/Public/";
