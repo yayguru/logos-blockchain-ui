@@ -6,6 +6,7 @@ import Logos.Theme
 import Logos.Controls
 
 import "../controls"
+import "../Units.js" as Units
 
 // Inscribe: fee preview first, submit only after an explicit confirm.
 ColumnLayout {
@@ -485,13 +486,13 @@ ColumnLayout {
                     Accessible.name: text
                     Layout.fillWidth: true
                     wrapMode: Text.WordWrap
-                    text: qsTr("I understand this is public, permanent, and costs about %1 base units.").arg(d.estimatedFee)
+                    text: qsTr("I understand this is public, permanent, and costs about %1.").arg(Units.format(String(d.estimatedFee)) || d.estimatedFee)
                 }
             }
 
             LogosText {
                 visible: d.estimatedFee.length > 0
-                text: qsTr("Estimated fee: %1 base units (includes 12% priority). Nothing has been sent.").arg(d.estimatedFee)
+                text: qsTr("Fee ≈ %1 (incl. 12% priority). Nothing sent yet.").arg(Units.format(String(d.estimatedFee)) || d.estimatedFee)
                 color: Theme.palette.text
                 wrapMode: Text.WordWrap
                 Layout.fillWidth: true

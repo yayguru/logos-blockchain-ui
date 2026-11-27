@@ -174,7 +174,7 @@ function humanError(message, formatLepta) {
     var avail = /available\s*[=:]\s*(\d+)/i.exec(m)
     if (/not enough funds|insufficient (funds|balance)|not have enough/.test(lower)) {
         nice = "Not enough funds in this account for the amount plus the fee"
-        if (avail) nice += " (available " + (formatLepta ? formatLepta(avail[1]) : _leptaToTokensPlain(avail[1]) + " TestToken") + " = " + avail[1] + " base units)"
+        if (avail) nice += " (available " + (formatLepta ? formatLepta(avail[1]) : _leptaToTokensPlain(avail[1]) + " LGO") + ")"
         nice += ". Lower the amount or pick another account."
     } else if (/not reachable|connection refused|connection to the node module failed|not running|node is offline|module not initialized|timed? ?out|call failed/.test(lower)) {
         nice = "The node is not reachable right now. Start the node (Start Node) and wait until it shows Online, then try again."

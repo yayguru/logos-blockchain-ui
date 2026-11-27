@@ -1167,49 +1167,55 @@ Rectangle {
                 }
 
                 // ---- Section 1: Rewards ----
-                LeaderRewardsView {
-                    id: leaderRewardsView
-                    nodeOffSeverity: root.nodeOffSeverity
-                    vouchersJson: root.claimableVouchersJson
-                    submittedCount: root.backend ? root.backend.earnedClaimsSubmitted : 0
-                    pendingCount: root.backend ? root.backend.earnedClaimsPending : 0
-                    claimsModel: root.claimsModel
-                    nodeOffReason: root.nodeOffReason
-                    timeInfoJson: monitor.timeInfoJson
+                // Scrolls as a page when the window is too short for it.
+                LogosScrollView {
+                    id: rewardsScroll
+                    LeaderRewardsView {
+                        id: leaderRewardsView
+                        width: rewardsScroll.availableWidth
+                        height: Math.max(rewardsScroll.availableHeight, implicitHeight)
+                        nodeOffSeverity: root.nodeOffSeverity
+                        vouchersJson: root.claimableVouchersJson
+                        submittedCount: root.backend ? root.backend.earnedClaimsSubmitted : 0
+                        pendingCount: root.backend ? root.backend.earnedClaimsPending : 0
+                        claimsModel: root.claimsModel
+                        nodeOffReason: root.nodeOffReason
+                        timeInfoJson: monitor.timeInfoJson
 
-                    onClaimLeaderRewardsRequested: function() {
-                        if (!root.backend) {
-                            leaderRewardsView.setLeaderClaimError(qsTr("Backend not connected."))
-                            return
-                        }
-                        logos.watch(
-                            root.backend.claimLeaderRewards(),
-                            function(result) {
-                                if (result.success) {
-                                    leaderRewardsView.setLeaderClaimResult(result.value, true)
-                                } else {
-                                    leaderRewardsView.setLeaderClaimError(result.error)
-                                }
-                                root.refreshClaimableVouchers()
-                            },
-                            function(error) {
-                                leaderRewardsView.setLeaderClaimError(error)
+                        onClaimLeaderRewardsRequested: function() {
+                            if (!root.backend) {
+                                leaderRewardsView.setLeaderClaimError(qsTr("Backend not connected."))
+                                return
                             }
-                        )
-                    }
-                    onCopyToClipboard: (text) => {
-                        root.copyText(text)
-                    }
-                    onHistoryPendingOnlyChanged: function(pendingOnly) {
-                        if (root.backend)
-                            root.backend.setClaimHistoryFilter(pendingOnly ? 1 : 0)
-                    }
-                    // Section 2 is the Explorer — keep in step with the tab bar.
-                    onOpenInExplorerRequested: function(id) {
-                        if (!id || id.length === 0)
-                            return
-                        sectionTabs.currentIndex = 2
-                        explorerView.searchFor(id)
+                            logos.watch(
+                                root.backend.claimLeaderRewards(),
+                                function(result) {
+                                    if (result.success) {
+                                        leaderRewardsView.setLeaderClaimResult(result.value, true)
+                                    } else {
+                                        leaderRewardsView.setLeaderClaimError(result.error)
+                                    }
+                                    root.refreshClaimableVouchers()
+                                },
+                                function(error) {
+                                    leaderRewardsView.setLeaderClaimError(error)
+                                }
+                            )
+                        }
+                        onCopyToClipboard: (text) => {
+                            root.copyText(text)
+                        }
+                        onHistoryPendingOnlyChanged: function(pendingOnly) {
+                            if (root.backend)
+                                root.backend.setClaimHistoryFilter(pendingOnly ? 1 : 0)
+                        }
+                        // Section 2 is the Explorer — keep in step with the tab bar.
+                        onOpenInExplorerRequested: function(id) {
+                            if (!id || id.length === 0)
+                                return
+                            sectionTabs.currentIndex = 2
+                            explorerView.searchFor(id)
+                        }
                     }
                 }
 
@@ -1285,6 +1291,38 @@ Rectangle {
                     onLezRefreshRequested: _d.refreshLez()
 
                     onRefreshAccountsRequested: if (root.backend) root.backend.refreshAccounts()
+
+                    // ---- Accounts: new account, names, receive (windows.16) ----
+                    keysBackedUp: !!root.backend && root.backend.keysBackedUp
+                    onCreateAccountRequested: function(title) {
+                        if (!root.backend) { walletView.setCreateAccountResult(false, qsTr("Not connected.")); return }
+                        logos.watch(root.backend.createAccount(title),
+                            function(r) {
+                                if (r.success) {
+                                    walletView.setCreateAccountResult(true, r.value)
+                                    keystoreBackupToast.show(qsTr("Keys backed up, new account added"),
+                                                             (r.value && r.value.backups && r.value.backups.length)
+                                                                 ? r.value.backups[0] : "")
+                                } else {
+                                    walletView.setCreateAccountResult(false, _d.errorText(r.error))
+                                }
+                            },
+                            function(e) { walletView.setCreateAccountResult(false, _d.errorText(e)) })
+                    }
+                    onAccountRenameRequested: function(address, label) {
+                        if (!root.backend) return
+                        logos.watch(root.backend.setAccountLabel(address, label),
+                            function(r) { if (!r.success) console.warn("rename:", r.error) },
+                            function(e) { console.warn("rename:", e) })
+                    }
+                    onQrRequested: function(text) {
+                        if (!root.backend) { walletView.setQr(false, null); return }
+                        logos.watch(root.backend.qrMatrix(text),
+                            function(r) { walletView.setQr(!!r.success, r.value) },
+                            function(e) { walletView.setQr(false, null) })
+                    }
+                    onRestartNodeRequested: _d.restartNode()
+                    onBackupKeysRequested: sectionTabs.currentIndex = 5
 
                     onTransferRequested: function(fromKeyHex, toKeyHex, amount) {
                         if (!root.backend) return
@@ -1467,63 +1505,69 @@ Rectangle {
                 }
 
                 // ---- Section 4: Mining (PoW tickets and claiming) ----
-                MiningView {
-                    id: miningView
-                    nodeOffSeverity: root.nodeOffSeverity
-                    nodeRunning: opPage.nodeRunning
-                    submittedCount: root.backend ? root.backend.powClaimsSubmitted : 0
-                    pendingCount: root.backend ? root.backend.powClaimsPending : 0
-                    powRewardsLepta: root.backend ? root.backend.powRewardsLepta : ""
-                    claimsModel: root.miningClaimsModel
-                    nodeOffReason: root.nodeOffReason
-                    timeInfoJson: monitor.timeInfoJson
-                    accounts: root.backend ? root.backend.accountRows : []
+                // Scrolls as a page when the window is too short for it.
+                LogosScrollView {
+                    id: miningScroll
+                    MiningView {
+                        id: miningView
+                        width: miningScroll.availableWidth
+                        height: Math.max(miningScroll.availableHeight, implicitHeight)
+                        nodeOffSeverity: root.nodeOffSeverity
+                        nodeRunning: opPage.nodeRunning
+                        submittedCount: root.backend ? root.backend.powClaimsSubmitted : 0
+                        pendingCount: root.backend ? root.backend.powClaimsPending : 0
+                        powRewardsLepta: root.backend ? root.backend.powRewardsLepta : ""
+                        claimsModel: root.miningClaimsModel
+                        nodeOffReason: root.nodeOffReason
+                        timeInfoJson: monitor.timeInfoJson
+                        accounts: root.backend ? root.backend.accountRows : []
 
-                    claimableTickets: root.backend ? root.backend.claimableTickets : 0
-                    soonestExpirySlots: root.backend ? root.backend.soonestExpirySlots : -1
-                    soonestExpiryCount: root.backend ? root.backend.soonestExpiryCount : 0
-                    claimableLoaded: root.backend ? root.backend.claimableLoaded : false
-                    claimableError: root.backend ? root.backend.claimableError : ""
+                        claimableTickets: root.backend ? root.backend.claimableTickets : 0
+                        soonestExpirySlots: root.backend ? root.backend.soonestExpirySlots : -1
+                        soonestExpiryCount: root.backend ? root.backend.soonestExpiryCount : 0
+                        claimableLoaded: root.backend ? root.backend.claimableLoaded : false
+                        claimableError: root.backend ? root.backend.claimableError : ""
 
-                    miningActive: opPage.miningActive
-                    chainOnline: monitor.modeOnline
-                    powStatusKnown: root.backend ? root.backend.powStatusKnown : false
-                    powRewardsEnabled: root.backend ? root.backend.powRewardsEnabled : false
-                    autoClaimArmed: root.backend ? root.backend.autoClaimArmed : false
-                    autoClaimSelfDisarmed: root.backend ? root.backend.autoClaimSelfDisarmed : false
-                    autoClaimTick: root.backend ? root.backend.autoClaimTick : 0
-                    autoClaimTickUnit: root.backend ? root.backend.autoClaimTickUnit : ""
-                    claimTargets: root.backend ? root.backend.powClaimTargets : []
+                        miningActive: opPage.miningActive
+                        chainOnline: monitor.modeOnline
+                        powStatusKnown: root.backend ? root.backend.powStatusKnown : false
+                        powRewardsEnabled: root.backend ? root.backend.powRewardsEnabled : false
+                        autoClaimArmed: root.backend ? root.backend.autoClaimArmed : false
+                        autoClaimSelfDisarmed: root.backend ? root.backend.autoClaimSelfDisarmed : false
+                        autoClaimTick: root.backend ? root.backend.autoClaimTick : 0
+                        autoClaimTickUnit: root.backend ? root.backend.autoClaimTickUnit : ""
+                        claimTargets: root.backend ? root.backend.powClaimTargets : []
 
-                    claimBusy: _d.claimBusy
-                    claimSuccess: _d.claimSuccess
-                    claimMessage: _d.claimMessage
+                        claimBusy: _d.claimBusy
+                        claimSuccess: _d.claimSuccess
+                        claimMessage: _d.claimMessage
 
-                    synced: monitor.synced
-                    cpuCount: root.backend ? root.backend.cpuCount : 1
-                    currentThreads: _d.currentThreads
-                    threadsBusy: _d.threadsBusy
-                    threadsOk: _d.threadsOk
-                    threadsMessage: _d.threadsMessage
-                    restartOffered: _d.restartOffered
-                    miningError: _d.miningError
-                    onStartMiningRequested: _d.startMining()
-                    onStopMiningRequested: _d.stopMining()
-                    onApplyThreadsRequested: function(threads) { _d.applyThreads(threads) }
-                    onRestartNodeRequested: _d.restartNode()
-                    Component.onCompleted: _d.loadPowConfig()
+                        synced: monitor.synced
+                        cpuCount: root.backend ? root.backend.cpuCount : 1
+                        currentThreads: _d.currentThreads
+                        threadsBusy: _d.threadsBusy
+                        threadsOk: _d.threadsOk
+                        threadsMessage: _d.threadsMessage
+                        restartOffered: _d.restartOffered
+                        miningError: _d.miningError
+                        onStartMiningRequested: _d.startMining()
+                        onStopMiningRequested: _d.stopMining()
+                        onApplyThreadsRequested: function(threads) { _d.applyThreads(threads) }
+                        onRestartNodeRequested: _d.restartNode()
+                        Component.onCompleted: _d.loadPowConfig()
 
-                    onClaimRequested: function(addressHex) { _d.claimPowRewards(addressHex) }
-                    onAutoClaimToggled: function(enabled) { _d.setAutoClaim(enabled) }
-                    onHistoryPendingOnlyChanged: function(pendingOnly) {
-                        if (root.backend)
-                            root.backend.setMiningHistoryFilter(pendingOnly ? 1 : 0)
-                    }
-                    onOpenInExplorerRequested: function(id) {
-                        if (!id || id.length === 0)
-                            return
-                        sectionTabs.currentIndex = 2
-                        explorerView.searchFor(id)
+                        onClaimRequested: function(addressHex) { _d.claimPowRewards(addressHex) }
+                        onAutoClaimToggled: function(enabled) { _d.setAutoClaim(enabled) }
+                        onHistoryPendingOnlyChanged: function(pendingOnly) {
+                            if (root.backend)
+                                root.backend.setMiningHistoryFilter(pendingOnly ? 1 : 0)
+                        }
+                        onOpenInExplorerRequested: function(id) {
+                            if (!id || id.length === 0)
+                                return
+                            sectionTabs.currentIndex = 2
+                            explorerView.searchFor(id)
+                        }
                     }
                 }
 
@@ -1534,6 +1578,14 @@ Rectangle {
                 // user came for when the node is wedged.
                 LogosScrollView {
                     id: settingsScroll
+                    onVisibleChanged: if (visible && root.backend)
+                        logos.watch(root.backend.aboutInfo(),
+                            function(r) { if (r.success) aboutCard.info = r.value },
+                            function(e) {})
+
+                    Column {
+                    width: settingsScroll.availableWidth
+                    spacing: Theme.spacing.large
 
                     NodeSettingsView {
                         id: nodeSettingsView
@@ -1601,6 +1653,12 @@ Rectangle {
                     onStartNewNodeRequested: root.openSetup(true)
                     autoResume: resumeStore.enabled
                     onAutoResumeToggled: function(on) { resumeStore.enabled = on }
+                    }
+
+                    AboutCard {
+                        id: aboutCard
+                        width: settingsScroll.availableWidth
+                    }
                     }
                 }
             }

@@ -19,7 +19,7 @@
 // Kept in step with kTokenDecimals in BlockchainBackend.cpp, which converts the
 // other way.
 var DECIMALS = 9
-var SYMBOL = "TestToken"
+var SYMBOL = "LGO"
 
 function _digitsOnly(s) {
     return typeof s === "string" && /^[0-9]+$/.test(s)

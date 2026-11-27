@@ -20,8 +20,9 @@ LogosListView {
 
     signal sectionActivated(int index)
 
-    Layout.preferredWidth: 200
-    Layout.minimumWidth: 160
+    // Narrower on small windows so the page beside it keeps its room.
+    Layout.preferredWidth: (parent && parent.width < 1100) ? 150 : 190
+    Layout.minimumWidth: 130
     Layout.maximumWidth: 200
     Layout.fillHeight: true
 

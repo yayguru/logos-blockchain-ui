@@ -1,4 +1,5 @@
 #include "BlockchainBackend.h"
+#include "qrcodegen.hpp"
 #include "logos_api.h"
 #include "logos_api_client.h"
 // logos_api_client.h only forward-declares LogosObject, and the probe below has
@@ -1902,8 +1903,16 @@ static LogosResult copyVerified(const QString& source, const QString& destinatio
             qint64 sz = -1;
             if (fileSha256(target, &sz) == srcHash && sz == srcSize)
                 return LogosResult{true, QDir::toNativeSeparators(target), QVariant()};
-            target = dir.filePath(QStringLiteral("%1-%2-%3.%4").arg(
-                baseName, stamp, QTime::currentTime().toString(QStringLiteral("HHmmss")), suffix));
+            const QString time = QTime::currentTime().toString(QStringLiteral("HHmmss"));
+            target = dir.filePath(QStringLiteral("%1-%2-%3.%4").arg(baseName, stamp, time, suffix));
+            // Two backups in the same second (before and after a change) must
+            // not collide: never overwrite an existing backup.
+            for (int n = 2; QFile::exists(target) && n < 100; ++n)
+                target = dir.filePath(QStringLiteral("%1-%2-%3-%4.%5").arg(baseName, stamp, time)
+                                          .arg(n).arg(suffix));
+            if (QFile::exists(target))
+                return fail(QStringLiteral("Too many backups with the same name in %1.")
+                                .arg(QDir::toNativeSeparators(dest)));
         }
     } else {
         target = dest;
@@ -3113,6 +3122,20 @@ QVariantMap BlockchainBackend::powStopAutoClaim()
 //
 
 // Returns rows: { address, roles, roleLabel, label }.
+// The node's own keystore titles, in words a person recognises.
+static QString friendlyKeyTitle(const QString& title)
+{
+    static const QHash<QString, QString> names{
+        {QStringLiteral("PoWClaim"), QStringLiteral("Mining rewards")},
+        {QStringLiteral("LeaderFunding"), QStringLiteral("Stake")},
+        {QStringLiteral("SdpFunding"), QStringLiteral("Services")},
+        {QStringLiteral("BlendZk"), QStringLiteral("Blend")},
+        {QStringLiteral("VaucherMaster"), QStringLiteral("Vouchers")},
+        {QStringLiteral("Stake"), QStringLiteral("Spare stake")},
+    };
+    return names.value(title, title);
+}
+
 QVariantMap BlockchainBackend::readAccountRoles(const QString& configPath)
 {
     if (!m_blockchainClient)
@@ -3145,8 +3168,12 @@ QVariantMap BlockchainBackend::readAccountRoles(const QString& configPath)
         rolesByAddress.insert(key, roles);
 
         const QString title = account.value(QStringLiteral("title")).toString();
-        if (!title.isEmpty())
-            namesByAddress.insert(normalizeHex(key), title);
+        const QString label = appSettings()
+            ->value(QStringLiteral("accountLabels/") + normalizeHex(key)).toString().trimmed();
+        if (!label.isEmpty())
+            namesByAddress.insert(normalizeHex(key), label);
+        else if (!title.isEmpty())
+            namesByAddress.insert(normalizeHex(key), friendlyKeyTitle(title));
     }
 
     // Both, from one composition. The model is what AccountsView renders and
@@ -4406,4 +4433,134 @@ QVariantMap BlockchainBackend::backupLezAccount(QString destinationPath)
         return result::toVariantMap(r);
     appSettings()->setValue(QStringLiteral("lezAccountBackedUp"), true);
     return result::toVariantMap(r);
+}
+
+// ---- windows.16: accounts, receive, about ------------------------------------
+
+static const char* const kUiBuild = "0.3.5-windows.16";
+static const char* const kModuleMin = "0.3.4-windows.6";
+
+QVariantMap BlockchainBackend::createAccount(QString title)
+{
+    const auto fail = [](const QString& m) { return result::toVariantMap(result::err(m)); };
+    if (!m_blockchainClient)
+        return fail(tr("The blockchain module is not connected."));
+    const QString cfg = userConfig().trimmed();
+    const QString cfgLocal = toLocalPath(cfg);
+    const QString configPath = cfgLocal.isEmpty() ? cfg : cfgLocal;
+    if (configPath.isEmpty() || !QFile::exists(configPath))
+        return fail(tr("No node config yet. Set up the node first."));
+    const QString keystore = nodeKeystorePath();
+    if (keystore.isEmpty())
+        return fail(tr("No keystore.yaml next to the config, so a new account cannot be added."));
+
+    // 1. Verified backups of everything a key lives in, before anything changes.
+    QStringList backups;
+    const LogosResult ks = copyVerified(keystore, QString(), QStringLiteral("keystore-backup"),
+                                        QStringLiteral("yaml"));
+    if (!ks.success)
+        return fail(tr("Backup failed, nothing changed: %1").arg(ks.error.toString()));
+    backups << ks.value.toString();
+    const LogosResult cf = copyVerified(configPath, QString(), QStringLiteral("user-config-backup"),
+                                        QStringLiteral("yaml"));
+    if (!cf.success)
+        return fail(tr("Backup failed, nothing changed: %1").arg(cf.error.toString()));
+    backups << cf.value.toString();
+    const QString lez = lezAccountFileIn(lezBaseDir(keystore, configDir()));
+    if (!lez.isEmpty() && QFile::exists(lez)) {
+        const LogosResult lz = copyVerified(lez, QString(), QStringLiteral("lez-account-backup"),
+                                            QStringLiteral("json"));
+        if (!lz.success)
+            return fail(tr("Backup failed, nothing changed: %1").arg(lz.error.toString()));
+        backups << lz.value.toString();
+    }
+
+    // 2. The module generates the key and appends it to known_keys.
+    const QVariant raw = m_blockchainClient->invokeRemoteMethod(
+        BLOCKCHAIN_MODULE_NAME, QStringLiteral("wallet_create_account"), configPath, title.trimmed());
+    if (!raw.isValid())
+        return fail(tr("The blockchain module did not answer. It may be older than %1: update it "
+                       "(Package Manager › Reinstall), then try again.").arg(QString::fromLatin1(kModuleMin)));
+    const LogosResult r = result::toLogosResult(raw);
+    if (!r.success) {
+        const QString e = r.error.toString();
+        if (e.contains(QStringLiteral("wallet_create_account")) || e.contains(QStringLiteral("not found"), Qt::CaseInsensitive)
+            || e.contains(QStringLiteral("unknown"), Qt::CaseInsensitive))
+            return fail(tr("This needs Blockchain Module %1 or newer. Update it, then try again.")
+                            .arg(QString::fromLatin1(kModuleMin)));
+        return fail(e);
+    }
+    const QJsonObject out = QJsonDocument::fromJson(r.value.toString().toUtf8()).object();
+
+    // 3. The keystore changed: back it up again so the new key is saved too.
+    setKeysBackedUp(false);
+    const LogosResult after = copyVerified(keystore, QString(), QStringLiteral("keystore-backup"),
+                                           QStringLiteral("yaml"));
+    if (after.success) {
+        backups << after.value.toString();
+        markKeysBackedUp();
+    }
+
+    refreshAccountRoles();
+    QVariantMap value{
+        {QStringLiteral("title"), out.value(QStringLiteral("title")).toString()},
+        {QStringLiteral("public_key"), out.value(QStringLiteral("public_key")).toString()},
+        {QStringLiteral("backups"), backups},
+        {QStringLiteral("backup_after_ok"), after.success},
+        {QStringLiteral("restart_required"), true},
+    };
+    return result::toVariantMap(LogosResult{true, value, QVariant()});
+}
+
+QVariantMap BlockchainBackend::setAccountLabel(QString address, QString label)
+{
+    const QString key = normalizeHex(address);
+    static const QRegularExpression hex64(QStringLiteral("^[0-9a-f]{64}$"));
+    if (!hex64.match(key).hasMatch())
+        return result::toVariantMap(result::err(tr("Not an account address.")));
+    label = label.trimmed().left(32);
+    if (label.isEmpty())
+        appSettings()->remove(QStringLiteral("accountLabels/") + key);
+    else
+        appSettings()->setValue(QStringLiteral("accountLabels/") + key, label);
+    refreshAccountRoles();
+    return result::toVariantMap(LogosResult{true, label, QVariant()});
+}
+
+QVariantMap BlockchainBackend::qrMatrix(QString text)
+{
+    if (text.isEmpty() || text.size() > 512)
+        return result::toVariantMap(result::err(tr("Nothing to encode.")));
+    try {
+        const qrcodegen::QrCode qr =
+            qrcodegen::QrCode::encodeText(text.toUtf8().constData(), qrcodegen::QrCode::Ecc::MEDIUM);
+        const int size = qr.getSize();
+        QStringList rows;
+        rows.reserve(size);
+        for (int y = 0; y < size; ++y) {
+            QString row(size, QLatin1Char('0'));
+            for (int x = 0; x < size; ++x)
+                if (qr.getModule(x, y))
+                    row[x] = QLatin1Char('1');
+            rows << row;
+        }
+        return result::toVariantMap(LogosResult{
+            true, QVariantMap{{QStringLiteral("size"), size}, {QStringLiteral("rows"), rows}}, QVariant()});
+    } catch (const std::exception& e) {
+        return result::toVariantMap(result::err(QString::fromUtf8(e.what())));
+    }
+}
+
+QVariantMap BlockchainBackend::aboutInfo()
+{
+    const QString cfg = userConfig().trimmed();
+    const QString local = toLocalPath(cfg);
+    QVariantMap v{
+        {QStringLiteral("ui_version"), QString::fromLatin1(kUiBuild)},
+        {QStringLiteral("build"), tr("Unofficial Windows build")},
+        {QStringLiteral("module_min"), QString::fromLatin1(kModuleMin)},
+        {QStringLiteral("config_path"), QDir::toNativeSeparators(local.isEmpty() ? cfg : local)},
+        {QStringLiteral("keystore_present"), !nodeKeystorePath().isEmpty()},
+    };
+    return result::toVariantMap(LogosResult{true, v, QVariant()});
 }

@@ -62,6 +62,16 @@ RowLayout {
     signal sdpPreviewRequested(string kind, string requestJson)
     signal sdpSubmitRequested(string kind, string requestJson)
     signal copyToClipboard(string text)
+    // Wallet accounts (windows.16): new account, display names, receive QR.
+    property bool keysBackedUp: true
+    signal createAccountRequested(string title)
+    signal accountRenameRequested(string address, string label)
+    signal qrRequested(string text)
+    signal restartNodeRequested()
+    signal backupKeysRequested()
+    function setCreateAccountResult(success, value) { accountsView.setCreateResult(success, value) }
+    function setQr(success, value) { accountsView.setQr(success, value) }
+    function clearPendingAccounts() { accountsView.clearPending() }
 
     // ---- Results back in ----
     function setTransferHash(hash) { transferView.setTransferHash(hash) }
@@ -94,7 +104,7 @@ RowLayout {
     function setSdpPreview(success, value) { sdpView.setPreview(success, value) }
     function setSdpResult(success, value) { sdpView.setSubmitResult(success, value) }
 
-    spacing: Theme.spacing.large
+    spacing: root.width < 900 ? Theme.spacing.medium : Theme.spacing.large
 
     SectionNav {
         objectName: "walletNav"
@@ -118,7 +128,7 @@ RowLayout {
     LogosFrame {
         Layout.fillWidth: true
         Layout.fillHeight: true
-        padding: Theme.spacing.large
+        padding: root.width < 900 ? Theme.spacing.medium : Theme.spacing.large
         backgroundColor: Theme.palette.surfaceRaised
         borderColor: "transparent"
         radius: Theme.spacing.radiusLarge
@@ -140,6 +150,13 @@ RowLayout {
                 onLezRefreshRequested: root.lezRefreshRequested()
                 onRefreshAccountsRequested: root.refreshAccountsRequested()
                 onCopyToClipboard: (text) => root.copyToClipboard(text)
+                nodeRunning: root.nodeRunning
+                keysBackedUp: root.keysBackedUp
+                onCreateAccountRequested: (title) => root.createAccountRequested(title)
+                onRenameRequested: (address, label) => root.accountRenameRequested(address, label)
+                onQrRequested: (text) => root.qrRequested(text)
+                onRestartNodeRequested: root.restartNodeRequested()
+                onBackupKeysRequested: root.backupKeysRequested()
             }
 
             TransferView {

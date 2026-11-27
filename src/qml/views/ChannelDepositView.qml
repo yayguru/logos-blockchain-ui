@@ -259,7 +259,7 @@ ColumnLayout {
                 { k: qsTr("Change public key"), v: d.changeKey.trim() },
                 { k: qsTr("Funding public keys"), v: fundingKeyList().join("\n") },
                 { k: qsTr("Max tx fee"), v: Units.parseAmount(maxFeeField.text).lepta.length > 0
-                                            ? qsTr("%1 (%2 base units)").arg(Units.format(Units.parseAmount(maxFeeField.text).lepta)).arg(Units.parseAmount(maxFeeField.text).lepta) : "" },
+                                            ? Units.format(Units.parseAmount(maxFeeField.text).lepta) : "" },
                 { k: qsTr("Metadata (base58)"), v: metadataField.text.trim() || qsTr("(none)") },
                 { k: qsTr("Optional tip hex"), v: tipField.text.trim() || qsTr("(current tip)") }
             ]
@@ -546,7 +546,7 @@ ColumnLayout {
                     readonly property var pa: Units.parseAmount(maxFeeField.text)
                     Layout.fillWidth: true
                     visible: maxFeeField.text.trim().length > 0
-                    text: pa.error.length ? qsTr(pa.error) : qsTr("= %1 base units").arg(pa.lepta)
+                    text: pa.error.length ? qsTr(pa.error) : "= " + Units.format(pa.lepta)
                     Accessible.name: text
                     font.pixelSize: Theme.typography.secondaryText
                     color: pa.error.length ? Theme.palette.error : Theme.palette.textSecondary

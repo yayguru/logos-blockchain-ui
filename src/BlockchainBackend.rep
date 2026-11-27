@@ -249,6 +249,21 @@ class BlockchainBackend
     // set with lezSetRpcUrl (https, or http://localhost). "" = build default.
     SLOT(QVariantMap lezNetwork())
     SLOT(QVariantMap lezSetRpcUrl(QString url))
+    // windows.16: a new wallet account. Takes verified backups of the
+    // keystore, the config and lez_account.json first (Documents\LogosBackups),
+    // asks the module (windows.6+) to generate a zk key and append it to
+    // wallet.known_keys (additive only; the module restores both files if any
+    // check fails), then saves a second verified keystore backup that includes
+    // the new key. The node tracks it after a restart.
+    //   -> { title, public_key, backups: [paths], restart_required: true }
+    SLOT(QVariantMap createAccount(QString title))
+    // A display name for an account, stored in the app settings only (the
+    // keystore is never rewritten for a label). "" clears it.
+    SLOT(QVariantMap setAccountLabel(QString address, QString label))
+    // QR code modules for `text`: { size, rows: ["0101…", …] }.
+    SLOT(QVariantMap qrMatrix(QString text))
+    // { ui_version, build, module_min, config_path, keystore_present }.
+    SLOT(QVariantMap aboutInfo())
     // A stop the user asked for was refused. Deliberately a signal, not a state:
     // the node is still running and still catching up, so the status must keep
     // saying so — this is a one-off "that didn't work, try again", not a mode

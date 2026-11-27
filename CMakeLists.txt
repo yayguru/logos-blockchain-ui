@@ -26,6 +26,8 @@ logos_module(
         src/ClaimsModel.cpp
         src/LezKeys.h
         src/LezKeys.cpp
+        src/qrcodegen.hpp
+        src/qrcodegen.cpp
     # TODO(logos-co/logos-liblogos#219): only for the node module's CPU and
     # memory figures — the library behind liblogos's own host-side stats, used
     # here because those stats are not exposed to modules. Goes with the flake

@@ -151,6 +151,12 @@ and the estimated fee. Nothing is sent until you tick the confirmation box and p
 
 1 token = 1,000,000,000 base units ("lepta").
 
+### Wallet accounts (windows.16+, needs module windows.6+)
+
+- **Wallet › Accounts** is one scrolling page: balances in LGO, short address with copy, **Receive** (address + QR code) and **Rename** (display name only; keys are not touched).
+- **+ New account** backs up `keystore.yaml`, `user_config.yaml` and `lez_account.json` to `Documents\LogosBackups` (verified), adds one new key through the module (`wallet_create_account`: never replaces an existing key, keeps every tracked key and auto-claim target, restores both files on any error), backs up the keystore again, then asks for a node restart so the node tracks the new account.
+- Settings › **About** shows the UI build, the module it needs and the config in use.
+
 ### LEZ 0.3 and 0.4 (windows.15+)
 
 LEZ 0.4 changed what a bridge deposit has to carry to name its recipient:

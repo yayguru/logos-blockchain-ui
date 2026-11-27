@@ -130,6 +130,10 @@ public slots:
     QVariantMap lezDepositRecipient(QString recipient) override;
     QVariantMap lezNetwork() override;
     QVariantMap lezSetRpcUrl(QString url) override;
+    QVariantMap createAccount(QString title) override;
+    QVariantMap setAccountLabel(QString address, QString label) override;
+    QVariantMap qrMatrix(QString text) override;
+    QVariantMap aboutInfo() override;
     // Folder of the current user config (where keystore.yaml lives).
     [[nodiscard]] QString configDir() const;
     QVariantMap powStartMining() override;

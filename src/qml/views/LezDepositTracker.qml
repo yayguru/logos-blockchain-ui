@@ -6,6 +6,7 @@ import Logos.Theme
 import Logos.Controls
 
 import "../controls"
+import "../Units.js" as Units
 import "ChainRead.js" as ChainRead
 
 // Follows bridge deposits from "sent" to "credited on LEZ":
@@ -342,7 +343,7 @@ LogosFrame {
                     Layout.fillWidth: true
                     wrapMode: Text.WrapAnywhere
                     visible: row.recipient.length > 0
-                    text: qsTr("%1 base units → %2").arg(row.amount).arg(row.recipient)
+                    text: qsTr("%1 → %2").arg(Units.format(String(row.amount)) || row.amount).arg(row.recipient)
                     font.pixelSize: Theme.typography.secondaryText
                     color: Theme.palette.textSecondary
                 }

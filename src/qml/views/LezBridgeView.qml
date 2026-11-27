@@ -479,7 +479,7 @@ ColumnLayout {
                 readonly property var pa: Units.parseAmount(amountField.text)
                 Layout.fillWidth: true
                 visible: amountField.text.trim().length > 0
-                text: pa.error.length ? qsTr(pa.error) : qsTr("= %1 base units").arg(pa.lepta)
+                text: pa.error.length ? qsTr(pa.error) : "= " + Units.format(pa.lepta)
                 Accessible.name: text
                 font.pixelSize: Theme.typography.secondaryText
                 color: pa.error.length ? Theme.palette.error : Theme.palette.textSecondary
@@ -550,7 +550,7 @@ ColumnLayout {
                     }
                     LogosText {
                         Layout.fillWidth: true
-                        text: qsTr("Amount: %1 (%2 base units)").arg(Units.format(d.amountLepta)).arg(d.amountLepta)
+                        text: qsTr("Amount: %1").arg(Units.format(d.amountLepta))
                         wrapMode: Text.WordWrap
                         Accessible.name: text
                     }
@@ -567,13 +567,13 @@ ColumnLayout {
                         visible: d.planReady || d.phase >= 2
                         wrapMode: Text.WordWrap
                         text: d.needsSplit
-                              ? qsTr("Plan: 2 transactions. (1) split an exact %1-unit note off with a transfer to the same account, fee about %2; (2) deposit that note to %7, fee about %3, capped at %4. Total fees about %5 base units%6.")
-                                    .arg(d.amountLepta).arg(d.splitFee).arg(d.depositFee).arg(d.depositCap)
-                                    .arg(d.splitFee + d.depositFee)
+                              ? qsTr("Plan: 2 transactions. (1) split off an exact %1 note (fee ≈ %2); (2) deposit it to %7 (fee ≈ %3, cap %4). Total fees ≈ %5%6.")
+                                    .arg(Units.format(d.amountLepta)).arg(Units.format(String(d.splitFee))).arg(Units.format(String(d.depositFee))).arg(Units.format(String(d.depositCap)))
+                                    .arg(Units.format(String(d.splitFee + d.depositFee)))
                                     .arg(d.pricesLive ? qsTr(" (gas %1/%2)").arg(d.ep).arg(d.sp) : qsTr(" (default gas 1/7)"))
                                     .arg(d.dest)
-                              : qsTr("Plan: 1 transaction. A note worth exactly %1 units already exists; deposit it to %5, fee about %2, capped at %3 base units%4.")
-                                    .arg(d.amountLepta).arg(d.depositFee).arg(d.depositCap)
+                              : qsTr("Plan: 1 transaction. A note of exactly %1 exists; deposit it to %5 (fee ≈ %2, cap %3)%4.")
+                                    .arg(Units.format(d.amountLepta)).arg(Units.format(String(d.depositFee))).arg(Units.format(String(d.depositCap)))
                                     .arg(d.pricesLive ? qsTr(" (gas %1/%2)").arg(d.ep).arg(d.sp) : qsTr(" (default gas 1/7)"))
                                     .arg(d.dest)
                         Accessible.name: text

@@ -228,7 +228,7 @@ ColumnLayout {
             objectName: "transferAmountBase"
             Layout.fillWidth: true
             visible: root.amountError.length === 0 && root.amountLepta.length > 0
-            text: qsTr("= %1 base units").arg(root.amountLepta)
+            text: "= " + Units.format(root.amountLepta)
             Accessible.name: text
             font.pixelSize: Theme.typography.secondaryText
             color: Theme.palette.textSecondary
@@ -308,7 +308,7 @@ ColumnLayout {
                 }
                 LogosText {
                     Layout.fillWidth: true
-                    text: qsTr("Amount: %1 (%2 base units)").arg(Units.format(d.amountLepta)).arg(d.amountLepta)
+                    text: qsTr("Amount: %1").arg(Units.format(d.amountLepta))
                     wrapMode: Text.WordWrap
                     Accessible.name: text
                 }
@@ -317,9 +317,9 @@ ColumnLayout {
                     Layout.fillWidth: true
                     text: d.pricesPending
                           ? qsTr("Estimating fee…")
-                          : qsTr("Estimated fee: about %1 base units (%2), paid from the same account%3. The wallet sets the exact fee when it builds the transaction.")
-                                .arg(d.feeLepta)
+                          : qsTr("Fee ≈ %1%2, paid from the same account%3.")
                                 .arg(Units.format(String(d.feeLepta)))
+                                .arg("")
                                 .arg(d.pricesLive ? qsTr(" at gas prices %1/%2").arg(d.ep).arg(d.sp)
                                                   : qsTr(" (gas prices unavailable, default 1/7 used)"))
                     wrapMode: Text.WordWrap

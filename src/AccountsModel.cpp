@@ -1,6 +1,7 @@
 #include "AccountsModel.h"
 
 #include <algorithm>
+#include <QHash>
 
 int AccountsModel::rowCount(const QModelIndex& parent) const
 {
@@ -80,7 +81,16 @@ QString AccountsModel::roleLabelOf(const Entry& entry)
 {
     // Every job, not the first: a generated config points the leader and SDP
     // wallets at the same funding key, and showing only one would hide that.
-    return entry.roles.join(QStringLiteral(" · "));
+    static const QHash<QString, QString> words{
+        {QStringLiteral("leader_funding"), QStringLiteral("stake")},
+        {QStringLiteral("sdp_funding"), QStringLiteral("services")},
+        {QStringLiteral("voucher_master"), QStringLiteral("vouchers")},
+        {QStringLiteral("blend_signing"), QStringLiteral("blend")},
+    };
+    QStringList out;
+    for (const QString& r : entry.roles)
+        out << words.value(r, r);
+    return out.join(QStringLiteral(" · "));
 }
 
 QString AccountsModel::labelOf(const Entry& entry)
