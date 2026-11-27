@@ -72,6 +72,7 @@ RowLayout {
     function setCreateAccountResult(success, value) { accountsView.setCreateResult(success, value) }
     function setQr(success, value) { accountsView.setQr(success, value) }
     function clearPendingAccounts() { accountsView.clearPending() }
+    function setPendingAccountsInfo(info) { accountsView.pendingInfo = info }
 
     // ---- Results back in ----
     function setTransferHash(hash) { transferView.setTransferHash(hash) }

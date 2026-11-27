@@ -90,6 +90,12 @@ void ClaimsModel::rebuild()
     std::stable_sort(rows.begin(), rows.end(), [](const Row& a, const Row& b) {
         return a.record.slot > b.record.slot;
     });
+    // windows.17: a miner with auto-claim collects tens of thousands of claims
+    // (22k on one laptop). Remoting and resetting the whole list on every new
+    // claim stalled Basecamp's UI, and nobody scrolls that far: the totals
+    // above the list cover everything, the list shows the newest rows.
+    if (rows.size() > kMaxRows)
+        rows.resize(kMaxRows);
 
     // Whole-list reset. The ledger is append-and-amend — a re-landed claim moves
     // to a new block — so there is no stable incremental diff to emit, and the
@@ -99,10 +105,14 @@ void ClaimsModel::rebuild()
     if (rows == m_rows) {
         if (m_libSlot != m_rowsLibSlot) {
             m_rowsLibSlot = m_libSlot;
-            if (!m_rows.isEmpty()) {
-                emit dataChanged(index(0, 0), index(m_rows.size() - 1, 0),
-                                 { SlotsToFinalityRole });
-            }
+            // Only unconfirmed rows count down; a confirmed one reads 0 for
+            // good. They are the newest, so they sit at the top.
+            int last = -1;
+            for (int i = 0; i < m_rows.size(); ++i)
+                if (!m_rows[i].confirmed)
+                    last = i;
+            if (last >= 0)
+                emit dataChanged(index(0, 0), index(last, 0), { SlotsToFinalityRole });
         }
         return;
     }

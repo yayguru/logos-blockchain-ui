@@ -28,6 +28,8 @@ QVariant AccountsModel::data(const QModelIndex& index, int role) const
         return labelOf(e);
     case NameRole:
         return e.name;
+    case PendingRole:
+        return e.pending;
     case Qt::DisplayRole:
         return e.address;
     default:
@@ -44,6 +46,7 @@ QHash<int, QByteArray> AccountsModel::roleNames() const
     names[RoleLabelRole] = "roleLabel";
     names[LabelRole] = "label";
     names[NameRole] = "name";
+    names[PendingRole] = "pending";
     return names;
 }
 
@@ -140,6 +143,26 @@ void AccountsModel::setAddresses(const QStringList& addresses)
     beginResetModel();
     m_entries = std::move(newEntries);
     endResetModel();
+}
+
+void AccountsModel::setPending(const QSet<QString>& pendingKeys)
+{
+    for (int i = 0; i < m_entries.size(); ++i) {
+        const bool p = pendingKeys.contains(normalizeKey(m_entries[i].address));
+        if (m_entries[i].pending != p) {
+            m_entries[i].pending = p;
+            emit dataChanged(index(i, 0), index(i, 0), { PendingRole });
+        }
+    }
+}
+
+bool AccountsModel::isPending(const QString& address) const
+{
+    const QString key = normalizeKey(address);
+    for (const Entry& e : m_entries)
+        if (normalizeKey(e.address) == key)
+            return e.pending;
+    return false;
 }
 
 void AccountsModel::setNames(const QHash<QString, QString>& nameByAddress)
@@ -247,6 +270,23 @@ bool holdsTokens(const QString& raw)
 }
 
 } // namespace
+
+QString AccountsModel::trackedTotal() const
+{
+    quint64 total = 0;
+    bool any = false;
+    for (const Entry& e : m_entries) {
+        if (e.pending || e.balance.isEmpty())
+            continue;
+        bool ok = false;
+        const quint64 v = e.balance.trimmed().toULongLong(&ok);
+        if (!ok)
+            continue;
+        total += v;
+        any = true;
+    }
+    return any ? QString::number(total) : QString();
+}
 
 bool AccountsModel::hasFunds() const
 {

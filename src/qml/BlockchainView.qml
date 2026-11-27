@@ -248,6 +248,10 @@ Rectangle {
         property bool enabled: true
         property bool nodeWanted: false
         property bool miningWanted: false
+        // windows.17: Stop Node clears miningWanted (so a reload does not bring
+        // mining back), which also left mining off after Start Node. This
+        // remembers it for the next start made from this UI.
+        property bool miningAfterManualStart: false
         property string configPath: ""
         property double lastAttemptMs: 0
     }
@@ -338,6 +342,50 @@ Rectangle {
         running: root.nodeRunning && !resume.miningAttempted && resumeStore.enabled && resumeStore.miningWanted
         onTriggered: resume.tickMining()
     }
+    // windows.17: accounts created while the node runs. Polls what arrived at
+    // them and, only if something did and the node is still running when its
+    // restart backfill would stop reaching that block, restarts it once.
+    QtObject {
+        id: pendingAccounts
+        property bool autoApplied: false
+        function poll() {
+            if (!root.backend || typeof root.backend.pendingAccountsInfo !== "function")
+                return
+            logos.watch(root.backend.pendingAccountsInfo(),
+                function(r) {
+                    if (!r.success) return
+                    walletView.setPendingAccountsInfo(r.value)
+                    const accts = r.value.accounts || []
+                    const lib = Number(r.value.lib_slot || 0)
+                    if (lib <= 0 || pendingAccounts.autoApplied || _d.restartPending || !root.nodeRunning)
+                        return
+                    for (let i = 0; i < accts.length; ++i) {
+                        const a = accts[i]
+                        if (String(a.received_lepta || "0") === "0" || Number(a.first_slot) <= 0)
+                            continue
+                        if (Number(a.first_slot) - lib < 3600) {
+                            pendingAccounts.autoApplied = true
+                            console.log("pending account", String(a.public_key).slice(0, 8), "received funds; applying with a node restart")
+                            _d.restartNode("accounts")
+                            return
+                        }
+                    }
+                },
+                function(e) { })
+        }
+    }
+    Timer {
+        interval: 20000
+        repeat: true
+        triggeredOnStart: true
+        running: root.ready && !!root.backend
+        onTriggered: pendingAccounts.poll()
+    }
+    Timer {
+        id: threadsMessageClear
+        interval: 120000
+        onTriggered: if (!_d.restartPending && !_d.threadsBusy) _d.threadsMessage = ""
+    }
     Connections {
         target: resumeStore
         function onEnabledChanged() { resume.syncModuleAutostart() }
@@ -354,7 +402,21 @@ Rectangle {
             if (root.backend && root.backend.status === BlockchainBackend.Running) {
                 if (_d.restartPending) {
                     _d.restartPending = false
-                    _d.threadsMessage = qsTr("Node restarted with the new thread count; mining resumes once synced.")
+                    // windows.17: only a thread-count restart talks about threads;
+                    // the message used to stick after every other restart too.
+                    _d.threadsMessage = _d.restartReason === "threads"
+                        ? qsTr("Node restarted with the new thread count; mining resumes once synced.")
+                        : ""
+                    _d.restartReason = ""
+                    resume.miningAttempted = false
+                    if (_d.threadsMessage.length)
+                        threadsMessageClear.restart()
+                }
+                // A node started by hand comes back mining if it was mining
+                // when it was stopped by hand.
+                if (resumeStore.miningAfterManualStart) {
+                    resumeStore.miningAfterManualStart = false
+                    resumeStore.miningWanted = true
                     resume.miningAttempted = false
                 }
                 _d.loadPowConfig()
@@ -644,6 +706,7 @@ Rectangle {
         property bool threadsOk: false
         property string threadsMessage: ""
         property bool restartOffered: false
+        property string restartReason: ""
         property bool restartPending: false
 
         function loadPowConfig() {
@@ -808,13 +871,16 @@ Rectangle {
 
         // Stop and start the same node with the same config, keeping the
         // user's intent so mining comes back once synced.
-        function restartNode() {
+        function restartNode(reason) {
             if (!root.backend || !root.nodeRunning)
                 return
             _d.restartOffered = false
             _d.restartPending = true
+            _d.restartReason = reason || ""
+            if (root.backend.miningActive)
+                resumeStore.miningWanted = true
             _d.threadsOk = true
-            _d.threadsMessage = qsTr("Restarting the node…")
+            _d.threadsMessage = _d.restartReason === "threads" ? qsTr("Restarting the node…") : ""
             root.backend.stopBlockchain()
         }
 
@@ -1039,6 +1105,7 @@ Rectangle {
                             return
                         if (opPage.canStop) {
                             // Stopped on purpose: do not bring it back on the next load.
+                            resumeStore.miningAfterManualStart = root.backend.miningActive || resumeStore.miningWanted
                             resumeStore.nodeWanted = false
                             resumeStore.miningWanted = false
                             resume.note = ""
@@ -1125,6 +1192,7 @@ Rectangle {
                     timeInfoJson: monitor.timeInfoJson
                     vouchersJson: root.claimableVouchersJson
                     stakeTotal: root.backend ? root.backend.stakeTotal : ""
+                    walletTotal: root.backend ? root.backend.walletTotal : ""
                     stakeNoteCount: root.backend ? root.backend.stakeNoteCount : 0
                     earnedTotal: root.backend ? root.backend.earnedTotal : ""
                     earnedClaimCount: root.backend ? root.backend.earnedClaimCount : 0
@@ -1300,6 +1368,7 @@ Rectangle {
                             function(r) {
                                 if (r.success) {
                                     walletView.setCreateAccountResult(true, r.value)
+                                    pendingAccounts.poll()
                                     keystoreBackupToast.show(qsTr("Keys backed up, new account added"),
                                                              (r.value && r.value.backups && r.value.backups.length)
                                                                  ? r.value.backups[0] : "")
@@ -1321,7 +1390,7 @@ Rectangle {
                             function(r) { walletView.setQr(!!r.success, r.value) },
                             function(e) { walletView.setQr(false, null) })
                     }
-                    onRestartNodeRequested: _d.restartNode()
+                    onRestartNodeRequested: _d.restartNode("accounts")
                     onBackupKeysRequested: sectionTabs.currentIndex = 5
 
                     onTransferRequested: function(fromKeyHex, toKeyHex, amount) {
@@ -1553,7 +1622,7 @@ Rectangle {
                         onStartMiningRequested: _d.startMining()
                         onStopMiningRequested: _d.stopMining()
                         onApplyThreadsRequested: function(threads) { _d.applyThreads(threads) }
-                        onRestartNodeRequested: _d.restartNode()
+                        onRestartNodeRequested: _d.restartNode("threads")
                         Component.onCompleted: _d.loadPowConfig()
 
                         onClaimRequested: function(addressHex) { _d.claimPowRewards(addressHex) }

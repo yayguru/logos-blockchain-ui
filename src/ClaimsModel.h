@@ -18,6 +18,8 @@
 class ClaimsModel : public QAbstractListModel {
     Q_OBJECT
 public:
+    // Newest rows the history list carries; totals cover every claim.
+    static constexpr int kMaxRows = 300;
     enum Roles {
         // "staking" | "mining" — which pipeline paid it.
         KindRole = Qt::UserRole + 1,

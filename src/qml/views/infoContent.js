@@ -491,10 +491,17 @@ var stake = {
         + "beneath the figure. Leader keys are expected to rotate, and once "
         + "notes span several keys no single address describes the stake: the "
         + "line beneath then reports how many notes and keys it is spread "
-        + "across instead.",
+        + "across instead. Sending spends whole notes: the change comes back "
+        + "as a NEW note, which also waits for the next snapshot — so even a "
+        + "tiny send can lower this figure by far more than the amount sent, "
+        + "until the next epoch. Nothing is lost: the wallet balance shows it.",
     states: [
         { label: "Amount",
           meaning: "The staked value, grouped for reading." },
+        { label: "+X ageing",
+          meaning: "Wallet balance that is not in the current snapshot yet "
+                 + "(new rewards, change from a send). It joins the stake at "
+                 + "the next epoch snapshot, within two epochs." },
         { label: "Address · N notes",
           meaning: "Beneath the figure while all the staked notes sit on one "
                  + "key: the address holding them, copyable in full, and how "

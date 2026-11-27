@@ -37,6 +37,9 @@ Item {
     // Stake, already shaped by the backend from wallet_get_leader_aged_notes.
     // Empty total means "not reported"; a reported "0" means nothing has aged.
     property string stakeTotal: ""
+    // windows.17: tracked wallet balance (lepta); the part above stakeTotal is
+    // still ageing toward the next epoch snapshot.
+    property string walletTotal: ""
     property int stakeNoteCount: 0
     // What this node has earned leading blocks, tallied by the backend from the
     // chain's own claim events — see EarnedLedger. Empty total means "not
@@ -255,12 +258,23 @@ Item {
         }
 
         // ---- Stake ---------------------------------------------------------
+        // Wallet balance not (yet) in the epoch snapshot. Doubles are exact
+        // here: balances stay far below 2^53 lepta.
+        readonly property real ageingLepta: {
+            if (root.stakeTotal.length === 0 || root.walletTotal.length === 0)
+                return 0
+            const diff = Number(root.walletTotal) - Number(root.stakeTotal)
+            return diff >= 1e6 ? diff : 0   // ignore dust below 0.001 LGO
+        }
         readonly property string stakeCaption: {
             if (root.stakeTotal.length === 0)
                 return ""
             if (root.stakeNoteCount === 0)
                 return qsTr("Nothing has aged yet")
             const parts = []
+            // First, so a narrow tile elides the note count, not this.
+            if (ageingLepta > 0)
+                parts.push(qsTr("+%1 ageing").arg(Units.compactPlain(String(ageingLepta))))
             if (root.stakeAddresses.length === 1)
                 parts.push(shorten(root.stakeAddresses[0]))
             parts.push(qsTr("%n note(s)", "", root.stakeNoteCount))

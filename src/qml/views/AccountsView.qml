@@ -43,9 +43,6 @@ LogosScrollView {
         if (success) {
             d.createError = ""
             d.created = value || ({})
-            const p = Object.assign({}, d.pending)
-            p[String(d.created.public_key || "").toLowerCase()] = true
-            d.pending = p
             newName.text = ""
             d.showCreate = false
         } else {
@@ -56,30 +53,33 @@ LogosScrollView {
     function setQr(success, value) {
         qr.matrix = success ? value : null
     }
-    // Called once the node is back after a restart: the new keys are tracked.
-    function clearPending() { d.pending = ({}); d.created = null }
+    function clearPending() { d.created = null }
 
-    // A restart (stop, then run again) is what makes the node track new keys.
-    onNodeRunningChanged: {
-        if (Object.keys(d.pending).length === 0)
-            return
-        if (!nodeRunning)
-            d.sawStop = true
-        else if (d.sawStop) {
-            d.sawStop = false
-            clearPending()
-            refreshAccountsRequested()
+    // windows.17: { lib_slot, accounts: [{ public_key, received_lepta, first_slot, ... }] }
+    // from the backend. Pending = made while the node runs; the node lists it
+    // from its next start, and nothing forces that start.
+    property var pendingInfo: null
+    readonly property var pendingReceipts: {
+        const out = []
+        const info = root.pendingInfo
+        if (!info || !info.accounts)
+            return out
+        for (let i = 0; i < info.accounts.length; ++i) {
+            const a = info.accounts[i]
+            if (String(a.received_lepta || "0") !== "0" && Number(a.first_slot) > 0)
+                out.push({ pk: String(a.public_key), lepta: String(a.received_lepta),
+                           left: Number(a.first_slot) - Number(info.lib_slot || 0) })
         }
+        return out
     }
+    readonly property int pendingCount: root.pendingInfo && root.pendingInfo.accounts ? root.pendingInfo.accounts.length : 0
 
     QtObject {
         id: d
-        property bool sawStop: false
         property bool showCreate: false
         property bool createBusy: false
         property string createError: ""
         property var created: null
-        property var pending: ({})
         property string receiveAddress: ""
         property string receiveName: ""
         property string renameAddress: ""
@@ -142,7 +142,7 @@ LogosScrollView {
                 LogosText {
                     Layout.fillWidth: true
                     wrapMode: Text.WordWrap
-                    text: qsTr("① Your keys are backed up first  ② a new key is added  ③ restart the node to use it.")
+                    text: qsTr("Your keys are backed up first, then a new key is added. Its address works at once (copy it or show the QR code); the node starts listing its balance the next time it starts. No restart needed.")
                     font.pixelSize: Theme.typography.secondaryText
                     color: Theme.palette.textSecondary
                 }
@@ -179,7 +179,7 @@ LogosScrollView {
             }
         }
 
-        // ---- Created: restart to start tracking ----
+        // ---- Created: usable now, no restart ----
         LogosNotice {
             objectName: "accountCreatedNotice"
             Layout.fillWidth: true
@@ -189,12 +189,35 @@ LogosScrollView {
             message: d.created
                      ? (qsTr("Keys backed up to Documents\\LogosBackups (%1 files).").arg((d.created.backups || []).length)
                         + (d.created.backup_after_ok === false ? qsTr(" Back up again in Settings.") : "")
-                        + "\n" + qsTr("Restart the node so it tracks the new account."))
+                        + "\n" + qsTr("Its address can receive LGO now. Incoming transfers show on its card right away; the node adds them to its spendable balance when it next starts. Nothing to restart now."))
                      : ""
             actions: [
                 LogosButton {
-                    text: qsTr("Restart node now")
-                    variant: LogosButton.Variant.Primary
+                    text: qsTr("Close")
+                    onClicked: d.created = null
+                }
+            ]
+        }
+
+        // ---- Something arrived at a pending account ----
+        LogosNotice {
+            objectName: "pendingReceiptNotice"
+            Layout.fillWidth: true
+            shown: root.pendingReceipts.length > 0
+            severity: LogosNotice.Warning
+            title: qsTr("LGO arrived at a new account")
+            message: {
+                if (root.pendingReceipts.length === 0)
+                    return ""
+                let left = Infinity
+                for (let i = 0; i < root.pendingReceipts.length; ++i)
+                    left = Math.min(left, root.pendingReceipts[i].left)
+                const h = Math.max(0, Math.floor(left / 3600)), m = Math.max(0, Math.floor((left % 3600) / 60))
+                return qsTr("The funds are on chain and safe. The node adds them to its spendable balance when it next starts, and that start has to happen within about %1 h %2 min while it can still re-read those blocks. If it has not restarted by about an hour before that, the app restarts it once by itself (about a minute; mining resumes).").arg(h).arg(m)
+            }
+            actions: [
+                LogosButton {
+                    text: qsTr("Apply now (restarts the node)")
                     enabled: root.nodeRunning
                     onClicked: root.restartNodeRequested()
                 }
@@ -229,7 +252,7 @@ LogosScrollView {
                 roleLabel: model.roleLabel || ""
                 address: model.address || ""
                 balance: model.balance || ""
-                pendingRestart: !!d.pending[String(model.address || "").toLowerCase()]
+                pendingRestart: !!model.pending
                 onReceiveRequested: (address) => {
                     d.receiveAddress = address
                     d.receiveName = name.length ? name : roleLabel

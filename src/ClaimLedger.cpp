@@ -260,7 +260,7 @@ bool ClaimLedger::save(const QString& path) const
         qWarning() << "ClaimLedger: cannot write" << path << file.errorString();
         return false;
     }
-    file.write(QJsonDocument(root).toJson(QJsonDocument::Indented));
+    file.write(QJsonDocument(root).toJson(QJsonDocument::Compact));
     if (!file.commit()) {
         qWarning() << "ClaimLedger: failed to commit" << path << file.errorString();
         return false;

@@ -3,6 +3,7 @@
 #include <QAbstractListModel>
 #include <QString>
 #include <QStringList>
+#include <QSet>
 #include <QVector>
 
 // Wallet accounts, from whichever source can answer.
@@ -16,6 +17,9 @@ public:
         RoleLabelRole,
         LabelRole,
         NameRole,
+        // windows.17: created in the keystore, not yet tracked by the running
+        // node (it picks keys up when it starts). Receives already.
+        PendingRole,
     };
 
     explicit AccountsModel(QObject* parent = nullptr) : QAbstractListModel(parent) {}
@@ -33,12 +37,18 @@ public:
     // reading. Answering this as a bool rather than a total keeps u64 decimal
     // strings out of it: they overflow a double and only need comparing to zero.
     bool hasFunds() const;
+    // Sum of the balances read so far for tracked (not pending) rows, lepta;
+    // "" when none has been read.
+    QString trackedTotal() const;
 
     // From the config. Addresses not already present are added, because this
     // runs before any node has reported one — and addresses already present
     // keep their balances.
     void setRoles(const QHash<QString, QStringList>& rolesByAddress);
     void setNames(const QHash<QString, QString>& nameByAddress);
+    // Normalised keys of the rows that are pending (see PendingRole).
+    void setPending(const QSet<QString>& pendingKeys);
+    bool isPending(const QString& address) const;
 
     // One account as a plain map: { address, roles, roleLabel, name, label, balance }.
     //
@@ -58,9 +68,10 @@ private:
         QString balance;
         QStringList roles;
         QString name;
+        bool pending = false;
         bool operator==(const Entry& other) const {
             return address == other.address && balance == other.balance
-                && roles == other.roles && name == other.name;
+                && roles == other.roles && name == other.name && pending == other.pending;
         }
     };
 

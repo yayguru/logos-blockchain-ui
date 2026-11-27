@@ -123,6 +123,9 @@ class BlockchainBackend
     PROP(QString stakeTotal READONLY)
     PROP(int stakeNoteCount READONLY)
     PROP(QStringList stakeAddresses READONLY)
+    // windows.17: sum of the tracked accounts' balances (lepta), "" until read.
+    // Stake minus this is what is still ageing toward the next snapshot.
+    PROP(QString walletTotal READONLY)
     // Whole seconds the node has been *online*, 0 whenever it is not. Both the
     // clock and the online edge live here: getCryptarchiaInfo already reads the
     // node's `mode`, so the backend has the verdict in hand and only needed the
@@ -254,8 +257,9 @@ class BlockchainBackend
     // asks the module (windows.6+) to generate a zk key and append it to
     // wallet.known_keys (additive only; the module restores both files if any
     // check fails), then saves a second verified keystore backup that includes
-    // the new key. The node tracks it after a restart.
-    //   -> { title, public_key, backups: [paths], restart_required: true }
+    // the new key. The address receives at once; the node lists its balance
+    // from its next start (pendingAccountsInfo covers the gap).
+    //   -> { title, public_key, backups: [paths], restart_required: false }
     SLOT(QVariantMap createAccount(QString title))
     // A display name for an account, stored in the app settings only (the
     // keystore is never rewritten for a label). "" clears it.
@@ -264,6 +268,12 @@ class BlockchainBackend
     SLOT(QVariantMap qrMatrix(QString text))
     // { ui_version, build, module_min, config_path, keystore_present }.
     SLOT(QVariantMap aboutInfo())
+    // windows.17: accounts made while the node runs, until the node tracks them
+    // (its next start). Transfers to them are read off the block stream.
+    //   -> { lib_slot, accounts: [{ public_key, created_ms, received_lepta, first_slot }] }
+    // A receipt at first_slot is picked up by the node's own restart backfill
+    // only while lib_slot < first_slot.
+    SLOT(QVariantMap pendingAccountsInfo())
     // A stop the user asked for was refused. Deliberately a signal, not a state:
     // the node is still running and still catching up, so the status must keep
     // saying so — this is a one-off "that didn't work, try again", not a mode

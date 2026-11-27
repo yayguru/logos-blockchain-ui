@@ -52,7 +52,7 @@ LogosFrame {
             LogosBadge {
                 objectName: "pendingBadge"
                 visible: root.pendingRestart
-                text: qsTr("restart to track")
+                text: qsTr("activates on next node start")
                 color: Theme.palette.warning
             }
             Item { Layout.fillWidth: true }

@@ -134,6 +134,7 @@ public slots:
     QVariantMap setAccountLabel(QString address, QString label) override;
     QVariantMap qrMatrix(QString text) override;
     QVariantMap aboutInfo() override;
+    QVariantMap pendingAccountsInfo() override;
     // Folder of the current user config (where keystore.yaml lives).
     [[nodiscard]] QString configDir() const;
     QVariantMap powStartMining() override;
@@ -396,6 +397,22 @@ private:
     // Wallet addresses as the node reports them, normalised for comparison
     // against the claim beneficiaries named in incoming blocks.
     QSet<QString> m_knownAddresses;
+
+    // windows.17: accounts created while the node runs. The node only learns
+    // keys when it starts (0.3.4 has no runtime add), so until then they are
+    // listed from here, and transfers paying them are tallied off the block
+    // stream so the user sees what arrived. Persisted in the app settings.
+    struct PendingIncoming {
+        quint64 lepta = 0;
+        quint64 firstSlot = 0;
+        QStringList seen; // "txhash:index", so a re-delivered block counts once
+    };
+    QHash<QString, qint64> m_pendingAccounts; // normalised pk -> created (ms)
+    QHash<QString, PendingIncoming> m_pendingIncoming;
+    bool m_pendingLoaded = false;
+    void loadPendingAccounts();
+    void savePendingAccounts();
+    void notePendingIncoming(const QJsonObject& block);
 
     ClaimLedger m_claims;
     bool m_claimsLoaded = false;

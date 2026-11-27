@@ -233,7 +233,9 @@ constexpr quint64 kSubmissionWindowSlots = 150;
 // The ledger is rewritten whole on every save, and a catch-up replay can find
 // claims faster than a disk write is worth doing. Anything newer than this is
 // still in memory, and is flushed by the next status poll or when the node stops.
-constexpr qint64 kEarnedSaveThrottleMs = 5000;
+// windows.17: the ledger of a long-running miner is megabytes; rewriting it
+// every 5 s while auto-claim lands claims kept the backend busy.
+constexpr qint64 kEarnedSaveThrottleMs = 30000;
 // Slots the claim catch-up reads per status poll. Blocks land every ~40 slots
 // on the devnet, so this is ~50 blocks per get_blocks call — small enough not
 // to stall the poll, large enough that a full backfill takes minutes, not hours.
@@ -1432,6 +1434,10 @@ QVariantMap BlockchainBackend::lezGetAccountBalance(QString accountBase58)
 
 BlockchainBackend::~BlockchainBackend()
 {
+    // Claims noticed since the last throttled save would otherwise wait for
+    // the catch-up scan of the next run.
+    if (m_claimsDirty)
+        saveClaims(/*force=*/true);
     if (status() != Running && status() != Starting)
         return;
     if (!m_blockchainClient || !moduleIsAlive())
@@ -2384,6 +2390,8 @@ void BlockchainBackend::noteProcessedBlock(const QString& eventJson)
     m_libSlot = std::max(m_libSlot, jsonUint(event.value(QStringLiteral("lib_slot"))));
 
     const QJsonObject block = blockFromEvent(event);
+    if (!m_pendingAccounts.isEmpty())
+        notePendingIncoming(block);
     // Blocks carrying no reward claim of either kind are the overwhelming
     // majority, and ruling them out needs no wallet keys — only the opcode.
     // That is what keeps a catch-up replay affordable: a node rebuilding its
@@ -3430,6 +3438,10 @@ void BlockchainBackend::publishAccountRows()
     rows.reserve(count);
     for (int i = 0; i < count; ++i) {
         const QModelIndex idx = m_accountsModel->index(i, 0);
+        // Pickers fund, claim and sign through the node, which cannot use a
+        // key it does not track yet.
+        if (m_accountsModel->data(idx, AccountsModel::PendingRole).toBool())
+            continue;
         rows.append(AccountsModel::describe(
             m_accountsModel->data(idx, AccountsModel::AddressRole).toString(),
             m_accountsModel->data(idx, AccountsModel::RolesRole).toStringList(),
@@ -3695,15 +3707,39 @@ void BlockchainBackend::refreshAccounts()
 
     qDebug() << "refreshAccounts: loaded" << list.size() << "addresses";
 
-    m_accountsModel->setAddresses(list);
-    publishAccountRows();
-
     // Node truth about which keys are ours, which is what a claim in a block is
     // matched against. It also covers manual claims to any tracked key, not just
     // the configured auto-claim target.
     m_knownAddresses.clear();
     for (const QString& address : list)
         m_knownAddresses.insert(normalizeHex(address));
+
+    // windows.17: a pending account the node now reports is active; the rest
+    // are listed after the node's own keys, flagged pending.
+    loadPendingAccounts();
+    bool pendingChanged = false;
+    QSet<QString> pendingKeys;
+    QStringList shown = list;
+    for (auto it = m_pendingAccounts.begin(); it != m_pendingAccounts.end();) {
+        if (m_knownAddresses.contains(it.key())) {
+            m_pendingIncoming.remove(it.key());
+            it = m_pendingAccounts.erase(it);
+            pendingChanged = true;
+            continue;
+        }
+        pendingKeys.insert(it.key());
+        shown << it.key();
+        ++it;
+    }
+    if (pendingChanged)
+        savePendingAccounts();
+
+    m_accountsModel->setAddresses(shown);
+    m_accountsModel->setPending(pendingKeys);
+    for (const QString& pk : pendingKeys)
+        m_accountsModel->setBalanceForAddress(
+            pk, QString::number(m_pendingIncoming.value(pk).lepta));
+    publishAccountRows();
 
     m_balancesSampled.restart();
     QPointer<BlockchainBackend> self(this);
@@ -3736,10 +3772,9 @@ void BlockchainBackend::refreshBalancesIfStale()
     const int count = m_accountsModel->rowCount();
     addresses.reserve(count);
     for (int i = 0; i < count; ++i) {
-        const QString address =
-            m_accountsModel->data(m_accountsModel->index(i, 0), AccountsModel::AddressRole)
-                .toString();
-        if (!address.isEmpty())
+        const QModelIndex idx = m_accountsModel->index(i, 0);
+        const QString address = m_accountsModel->data(idx, AccountsModel::AddressRole).toString();
+        if (!address.isEmpty() && !m_accountsModel->data(idx, AccountsModel::PendingRole).toBool())
             addresses << address;
     }
     if (addresses.isEmpty())
@@ -3778,6 +3813,7 @@ QVariantMap BlockchainBackend::getBalance(QString addressHex)
     if (lr.success)
         m_accountsModel->setBalanceForAddress(addressHex, lr.value.toString());
     setWalletFunded(m_accountsModel->hasFunds());
+    setWalletTotal(m_accountsModel->trackedTotal());
     return result::toVariantMap(lr);
 }
 
@@ -4437,7 +4473,7 @@ QVariantMap BlockchainBackend::backupLezAccount(QString destinationPath)
 
 // ---- windows.16: accounts, receive, about ------------------------------------
 
-static const char* const kUiBuild = "0.3.5-windows.16";
+static const char* const kUiBuild = "0.3.5-windows.17";
 static const char* const kModuleMin = "0.3.4-windows.6";
 
 QVariantMap BlockchainBackend::createAccount(QString title)
@@ -4502,12 +4538,20 @@ QVariantMap BlockchainBackend::createAccount(QString title)
     }
 
     refreshAccountRoles();
+    const QString newPk = normalizeHex(out.value(QStringLiteral("public_key")).toString());
+    if (!newPk.isEmpty()) {
+        loadPendingAccounts();
+        m_pendingAccounts.insert(newPk, QDateTime::currentMSecsSinceEpoch());
+        savePendingAccounts();
+        // Lists it at once (as pending) instead of after the next node start.
+        refreshAccounts();
+    }
     QVariantMap value{
         {QStringLiteral("title"), out.value(QStringLiteral("title")).toString()},
         {QStringLiteral("public_key"), out.value(QStringLiteral("public_key")).toString()},
         {QStringLiteral("backups"), backups},
         {QStringLiteral("backup_after_ok"), after.success},
-        {QStringLiteral("restart_required"), true},
+        {QStringLiteral("restart_required"), false},
     };
     return result::toVariantMap(LogosResult{true, value, QVariant()});
 }
@@ -4563,4 +4607,117 @@ QVariantMap BlockchainBackend::aboutInfo()
         {QStringLiteral("keystore_present"), !nodeKeystorePath().isEmpty()},
     };
     return result::toVariantMap(LogosResult{true, v, QVariant()});
+}
+
+// ---- windows.17: accounts created while the node runs ----
+
+void BlockchainBackend::loadPendingAccounts()
+{
+    if (m_pendingLoaded)
+        return;
+    m_pendingLoaded = true;
+    auto settings = appSettings();
+    settings->beginGroup(QStringLiteral("pendingAccounts"));
+    for (const QString& pk : settings->childKeys())
+        m_pendingAccounts.insert(pk, settings->value(pk).toLongLong());
+    settings->endGroup();
+    settings->beginGroup(QStringLiteral("pendingIncoming"));
+    for (const QString& pk : settings->childKeys()) {
+        const QStringList f = settings->value(pk).toString().split(QLatin1Char('|'));
+        if (f.size() < 2 || !m_pendingAccounts.contains(pk))
+            continue;
+        PendingIncoming in;
+        in.lepta = f.at(0).toULongLong();
+        in.firstSlot = f.at(1).toULongLong();
+        if (f.size() > 2 && !f.at(2).isEmpty())
+            in.seen = f.at(2).split(QLatin1Char(','));
+        m_pendingIncoming.insert(pk, in);
+    }
+    settings->endGroup();
+}
+
+void BlockchainBackend::savePendingAccounts()
+{
+    auto settings = appSettings();
+    settings->remove(QStringLiteral("pendingAccounts"));
+    settings->remove(QStringLiteral("pendingIncoming"));
+    settings->beginGroup(QStringLiteral("pendingAccounts"));
+    for (auto it = m_pendingAccounts.constBegin(); it != m_pendingAccounts.constEnd(); ++it)
+        settings->setValue(it.key(), it.value());
+    settings->endGroup();
+    settings->beginGroup(QStringLiteral("pendingIncoming"));
+    for (auto it = m_pendingIncoming.constBegin(); it != m_pendingIncoming.constEnd(); ++it) {
+        settings->setValue(it.key(), QStringLiteral("%1|%2|%3")
+                                         .arg(it.value().lepta)
+                                         .arg(it.value().firstSlot)
+                                         .arg(it.value().seen.mid(qMax(0, int(it.value().seen.size()) - 64))
+                                                  .join(QLatin1Char(','))));
+    }
+    settings->endGroup();
+}
+
+// Transfers paying a pending account. Outputs of the transfer op carry
+// { pk, value }; nothing here is income accounting, only "this arrived".
+void BlockchainBackend::notePendingIncoming(const QJsonObject& block)
+{
+    const quint64 slot = jsonUint(block.value(QStringLiteral("header")).toObject().value(QStringLiteral("slot")));
+    bool changed = false;
+    for (const QJsonValue txValue : block.value(QStringLiteral("transactions")).toArray()) {
+        const QJsonObject tx = txValue.toObject();
+        const QJsonObject mantleTx = tx.value(QStringLiteral("mantle_tx")).toObject();
+        QString txHash = tx.value(QStringLiteral("id")).toString();
+        if (txHash.isEmpty())
+            txHash = mantleTx.value(QStringLiteral("hash")).toString();
+        int opIndex = 0;
+        for (const QJsonValue opValue : mantleTx.value(QStringLiteral("ops")).toArray()) {
+            const QJsonObject op = opValue.toObject();
+            ++opIndex;
+            if (op.value(QStringLiteral("opcode")).toInt(-1) != kTransferOpcode)
+                continue;
+            int outIndex = 0;
+            for (const QJsonValue outValue :
+                 op.value(QStringLiteral("payload")).toObject().value(QStringLiteral("outputs")).toArray()) {
+                const QJsonObject o = outValue.toObject();
+                ++outIndex;
+                const QString pk = normalizeHex(o.value(QStringLiteral("pk")).toString());
+                if (!m_pendingAccounts.contains(pk))
+                    continue;
+                // Without a hash, the block slot and position still identify it.
+                const QString tag = QStringLiteral("%1:%2:%3:%4")
+                                        .arg(txHash.isEmpty() ? QString::number(slot) : normalizeHex(txHash))
+                                        .arg(opIndex).arg(outIndex).arg(pk.left(8));
+                PendingIncoming& in = m_pendingIncoming[pk];
+                if (in.seen.contains(tag))
+                    continue;
+                in.seen << tag;
+                in.lepta += jsonUint(o.value(QStringLiteral("value")));
+                if (in.firstSlot == 0 || (slot > 0 && slot < in.firstSlot))
+                    in.firstSlot = slot;
+                m_accountsModel->setBalanceForAddress(pk, QString::number(in.lepta));
+                changed = true;
+            }
+        }
+    }
+    if (changed)
+        savePendingAccounts();
+}
+
+QVariantMap BlockchainBackend::pendingAccountsInfo()
+{
+    loadPendingAccounts();
+    QVariantList accounts;
+    for (auto it = m_pendingAccounts.constBegin(); it != m_pendingAccounts.constEnd(); ++it) {
+        const PendingIncoming in = m_pendingIncoming.value(it.key());
+        accounts.append(QVariantMap{
+            {QStringLiteral("public_key"), it.key()},
+            {QStringLiteral("created_ms"), it.value()},
+            {QStringLiteral("received_lepta"), QString::number(in.lepta)},
+            {QStringLiteral("first_slot"), static_cast<qint64>(in.firstSlot)},
+        });
+    }
+    QVariantMap value{
+        {QStringLiteral("lib_slot"), static_cast<qint64>(m_libSlot)},
+        {QStringLiteral("accounts"), accounts},
+    };
+    return result::toVariantMap(LogosResult{true, value, QVariant()});
 }

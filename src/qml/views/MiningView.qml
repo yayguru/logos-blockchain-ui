@@ -691,6 +691,15 @@ ColumnLayout {
         font.pixelSize: Theme.typography.secondaryText
     }
 
+    LogosText {
+        Layout.fillWidth: true
+        visible: claimsList.count >= 300
+        wrapMode: Text.WordWrap
+        text: qsTr("Showing the newest 300 claims; the totals above count all of them.")
+        font.pixelSize: Theme.typography.secondaryText
+        color: Theme.palette.textSecondary
+    }
+
     ListView {
         id: claimsList
         Layout.fillWidth: true
